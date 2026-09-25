@@ -2,11 +2,15 @@
 
 Pulls a trimmed sample (default ``MAX_HOUR=2``, ``sf``+``pl``) for one
 analysis time from the operational bucket (which only retains ~2 weeks)
-and uploads it to a fixture bucket under an analysis-time prefix::
+and uploads it to a fixture bucket under a suite + analysis-time prefix::
 
-    s3://<fixture-bucket>/<YYYY-MM-DDTHHMMZ>/ml/<grib files>
-    s3://<fixture-bucket>/<YYYY-MM-DDTHHMMZ>/README.md
-    s3://<fixture-bucket>/<YYYY-MM-DDTHHMMZ>/manifest.json
+    s3://<fixture-bucket>/<suite>/<YYYY-MM-DDTHHMMZ>/ml/<grib files>
+    s3://<fixture-bucket>/<suite>/<YYYY-MM-DDTHHMMZ>/README.md
+    s3://<fixture-bucket>/<suite>/<YYYY-MM-DDTHHMMZ>/manifest.json
+
+DINI and IG read different operational prefixes (``s3://harmonie-data/ml``
+vs ``s3://harmonie-data/ig``), so each suite gets its own fixture. The
+default source is the DINI path; pass ``--source`` explicitly for IG.
 
 Source and destination may live on different S3 hosts: select profiles
 with ``--source-profile`` (``SRC_AWS_PROFILE``) and ``--dest-profile``
@@ -40,7 +44,9 @@ from .settings import (
     require_utc,
 )
 
-DEFAULT_SOURCE_URI = "s3://harmonie-data/ml"
+DEFAULT_SOURCE_URI = "s3://harmonie-data/ml"  # DINI path; IG uses s3://harmonie-data/ig
+DEFAULT_SUITE_NAME = "dini"
+VALID_SUITES = ("dini", "ig")
 DEFAULT_FIXTURE_BUCKET = "uwcw-sample-grib2zarr-conversion-datasets"
 DEFAULT_MAX_HOUR = 2
 DEFAULT_MEMBER_ID = "CONTROL__dmi"
@@ -153,16 +159,19 @@ def _eccodes_version() -> str:
         return "unknown"
 
 
-def dest_prefix(fixture_bucket: str, t_analysis: datetime.datetime) -> str:
-    """Destination prefix URI, including the analysis-time component."""
+def dest_prefix(
+    fixture_bucket: str, suite_name: str, t_analysis: datetime.datetime
+) -> str:
+    """Destination prefix URI: ``<bucket>/<suite>/<YYYY-MM-DDTHHMMZ>``."""
     root = fixture_bucket if "://" in fixture_bucket else f"s3://{fixture_bucket}"
-    return f"{root.rstrip('/')}/{refs_dir_name(t_analysis)}"
+    return f"{root.rstrip('/')}/{suite_name}/{refs_dir_name(t_analysis)}"
 
 
 def build_manifest(
     *,
     t_analysis: datetime.datetime,
     source_uri: str,
+    suite_name: str,
     member_id: str,
     max_hour: int,
     file_types: tuple[str, ...],
@@ -184,6 +193,7 @@ def build_manifest(
         "fixture_version": 1,
         "analysis_time": require_utc(t_analysis).isoformat(),
         "source_uri": source_uri,
+        "suite_name": suite_name,
         "source_profile": source_profile,
         "dest_profile": dest_profile,
         "member_id": member_id,
@@ -211,6 +221,7 @@ def build_readme(manifest: dict, fixture_prefix: str) -> str:
 Frozen sample of operational HARMONIE GRIB files for CI and local testing.
 
 - **Analysis time:** `{manifest["analysis_time"]}`
+- **Suite:** `{manifest["suite_name"]}`
 - **Source:** `{manifest["source_uri"]}` (operational bucket, retains ~2 weeks —
   this is a frozen copy, old analysis times cannot be re-pulled)
 - **Member:** `{manifest["member_id"]}`, **max hour:** `{manifest["max_hour"]}`,
@@ -233,6 +244,7 @@ needs its source root swapped.
 
 ```bash
 export SRC_GRIB_ROOT_URI="{fixture_prefix}/ml"
+export SUITE_NAME={manifest["suite_name"]}
 export MAX_HOUR={manifest["max_hour"]}
 uv run pytest -m integration
 ```
@@ -247,7 +259,7 @@ Fixtures are immutable — create a new `<analysis-time>/` prefix instead of
 overwriting:
 
 ```bash
-python -m zarr_creator.create_test_fixture --analysis-time <ISO-Z> --max-hour {manifest["max_hour"]}
+python -m zarr_creator.create_test_fixture --suite-name {manifest["suite_name"]} --analysis-time <ISO-Z> --max-hour {manifest["max_hour"]}
 ```
 """
 
@@ -257,6 +269,7 @@ def create_test_fixture(
     t_analysis: datetime.datetime | None = None,
     source_uri: str = DEFAULT_SOURCE_URI,
     fixture_bucket: str = DEFAULT_FIXTURE_BUCKET,
+    suite_name: str = DEFAULT_SUITE_NAME,
     member_id: str = DEFAULT_MEMBER_ID,
     max_hour: int = DEFAULT_MAX_HOUR,
     file_types: tuple[str, ...] = DEFAULT_FILE_TYPES,
@@ -268,6 +281,8 @@ def create_test_fixture(
     dest_dir: str | None = None,
 ) -> str:
     """Create the fixture; return the destination prefix URI (or ``dest_dir``)."""
+    if suite_name not in VALID_SUITES:
+        raise ValueError(f"suite_name must be one of {VALID_SUITES}, got: {suite_name!r}")
     t_analysis = resolve_analysis_time(
         t_analysis, source_uri, max_hour, member_id, file_types, source_profile, now
     )
@@ -288,9 +303,12 @@ def create_test_fixture(
         )
         return dest_dir
 
-    prefix = dest_prefix(fixture_bucket, t_analysis)
+    prefix = dest_prefix(fixture_bucket, suite_name, t_analysis)
     dest_ml = f"{prefix}/ml"
-    logger.info(f"Snapshotting {t_analysis.isoformat()} from {source_uri} to {prefix}")
+    logger.info(
+        f"Snapshotting {suite_name} {t_analysis.isoformat()} "
+        f"from {source_uri} to {prefix}"
+    )
 
     dest_urls = (
         [f"{dest_ml}/{name}" for name in names]
@@ -314,6 +332,7 @@ def create_test_fixture(
         manifest = build_manifest(
             t_analysis=t_analysis,
             source_uri=source_uri,
+            suite_name=suite_name,
             member_id=member_id,
             max_hour=max_hour,
             file_types=file_types,
@@ -349,6 +368,7 @@ def create_test_fixture(
     logger.info(
         "CI usage:\n"
         f"  export SRC_GRIB_ROOT_URI={dest_ml}\n"
+        f"  export SUITE_NAME={suite_name}\n"
         f"  export MAX_HOUR={max_hour}"
     )
     return prefix
@@ -360,6 +380,7 @@ def main(argv=None) -> str:
     parser.add_argument("--analysis-time", default=None)
     parser.add_argument("--source", default=None)
     parser.add_argument("--fixture-bucket", default=None)
+    parser.add_argument("--suite-name", default=None)
     parser.add_argument("--member-id", default=None)
     parser.add_argument("--max-hour", type=int, default=None)
     parser.add_argument("--file-types", default=None)
@@ -386,6 +407,7 @@ def main(argv=None) -> str:
         args.fixture_bucket or os.environ.get("FIXTURE_BUCKET", DEFAULT_FIXTURE_BUCKET)
     )
     member_id = args.member_id or os.environ.get("MEMBER_ID", DEFAULT_MEMBER_ID)
+    suite_name = args.suite_name or os.environ.get("SUITE_NAME", DEFAULT_SUITE_NAME)
     max_hour = args.max_hour
     if max_hour is None:
         max_hour = int(os.environ.get("MAX_HOUR", str(DEFAULT_MAX_HOUR)))
@@ -403,6 +425,7 @@ def main(argv=None) -> str:
         t_analysis=_parse_t_analysis(args.analysis_time),
         source_uri=source_uri,
         fixture_bucket=fixture_bucket,
+        suite_name=suite_name,
         member_id=member_id,
         max_hour=max_hour,
         file_types=file_types,

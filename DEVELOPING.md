@@ -124,23 +124,28 @@ SRC_AWS_PROFILE=my-profile MAX_HOUR=12 uv run python -m zarr_creator.create_test
 The operational bucket only retains ~2 weeks of data, so CI and reproducible
 local runs use a frozen trimmed copy in a fixture bucket (default
 `uwcw-sample-grib2zarr-conversion-datasets`, override with `--fixture-bucket`
-/ `$FIXTURE_BUCKET`). The prefix contains the analysis time so the origin is
-self-describing, with a trailing `/ml` mirroring the operational layout:
+/ `$FIXTURE_BUCKET`). The prefix contains the suite and analysis time so the
+origin is self-describing, with a trailing `/ml` mirroring the operational
+layout. DINI and IG read different operational prefixes
+(`s3://harmonie-data/ml` vs `s3://harmonie-data/ig`), so each suite gets its
+own fixture namespace:
 
 ```text
-s3://<fixture-bucket>/<YYYY-MM-DDTHHMMZ>/ml/<grib files>
-s3://<fixture-bucket>/<YYYY-MM-DDTHHMMZ>/README.md
-s3://<fixture-bucket>/<YYYY-MM-DDTHHMMZ>/manifest.json
+s3://<fixture-bucket>/<suite>/<YYYY-MM-DDTHHMMZ>/ml/<grib files>
+s3://<fixture-bucket>/<suite>/<YYYY-MM-DDTHHMMZ>/README.md
+s3://<fixture-bucket>/<suite>/<YYYY-MM-DDTHHMMZ>/manifest.json
 ```
 
-Create one (explicit time is recommended for reproducibility):
+Create one (explicit time is recommended for reproducibility; the default
+source is the DINI path, pass `--source s3://harmonie-data/ig` for IG):
 
 ```bash
-uv run python -m zarr_creator.create_test_fixture --analysis-time 2025-03-02T00:00:00Z --max-hour 2 --dry-run
-uv run python -m zarr_creator.create_test_fixture --analysis-time 2025-03-02T00:00:00Z --max-hour 2
+uv run python -m zarr_creator.create_test_fixture --suite-name dini --analysis-time 2025-03-02T00:00:00Z --max-hour 2 --dry-run
+uv run python -m zarr_creator.create_test_fixture --suite-name dini --analysis-time 2025-03-02T00:00:00Z --max-hour 2
+uv run python -m zarr_creator.create_test_fixture --suite-name ig --source s3://harmonie-data/ig --analysis-time 2025-03-02T00:00:00Z --max-hour 2
 ```
 
-Flags: `--source`, `--fixture-bucket`, `--member-id`, `--max-hour`,
+Flags: `--source`, `--fixture-bucket`, `--suite-name`, `--member-id`, `--max-hour`,
 `--file-types`, `--dry-run`, `--overwrite` (default refuses when the prefix
 exists — fixtures are immutable, snapshot a new analysis time instead).
 
@@ -155,8 +160,8 @@ SOURCE_AWS_PROFILE=oper DEST_AWS_PROFILE=fixtures \
 ```
 
 After upload the script verifies the destination and prints the CI env block
-(`SRC_GRIB_ROOT_URI=...`, `MAX_HOUR=...`). `README.md` (origin, retention
-warning, layout, usage) and `manifest.json` (sizes, sha256, git sha, eccodes
+(`SRC_GRIB_ROOT_URI=...`, `SUITE_NAME=...`, `MAX_HOUR=...`). `README.md` (origin, retention
+warning, layout, usage) and `manifest.json` (suite, sizes, sha256, git sha, eccodes
 version) travel with the data.
 
 ## 3. Run the pipeline manually in dev

@@ -3,11 +3,13 @@
 Runs the full pipeline (index -> refs -> zarr) for the fixture's trimmed
 analysis time. Gated behind ``RUN_S3_E2E=1`` plus fixture coordinates::
 
-    RUN_S3_E2E=1 FIXTURE_SRC_URI=s3://<bucket>/<analysis>/ml \\
+    RUN_S3_E2E=1     FIXTURE_SRC_URI=s3://<bucket>/<suite>/<analysis>/ml \\
         FIXTURE_T_ANALYSIS=2025-03-02T00:00:00Z FIXTURE_MAX_HOUR=2 \\
+        FIXTURE_SUITE_NAME=dini \\
         uv run pytest -m integration
 
 Reads are unsigned (``SRC_ANON=1``); output goes to a local temp dir.
+The conversion ``--suite-name`` follows ``FIXTURE_SUITE_NAME``.
 """
 
 import datetime
@@ -36,6 +38,7 @@ def _config():
         os.environ["FIXTURE_SRC_URI"],
         isodate.parse_datetime(os.environ["FIXTURE_T_ANALYSIS"]),
         int(os.environ["FIXTURE_MAX_HOUR"]),
+        os.environ.get("FIXTURE_SUITE_NAME", "dini"),
     )
 
 
@@ -43,7 +46,7 @@ def test_s3_fixture_end_to_end(tmp_path):
     from zarr_creator.pipeline.index_refs import build_indexes_and_refs
     from zarr_creator.settings import Settings, refs_dir_for, require_utc
 
-    src_uri, t_analysis, max_hour = _config()
+    src_uri, t_analysis, max_hour, suite_name = _config()
     t_analysis = require_utc(t_analysis)
 
     settings = Settings(
@@ -51,7 +54,7 @@ def test_s3_fixture_end_to_end(tmp_path):
         refs_root_path=str(tmp_path / "refs"),
         member_id="CONTROL__dmi",
         max_hour=max_hour,
-        suite_name="dini",
+        suite_name=suite_name,
         src_grib_temp_path=str(tmp_path / "stage"),
         dst_zarr_output_path=f"file://{tmp_path}/out/{{dataset_id}}.zarr",
         src_aws_profile=None,
@@ -70,7 +73,7 @@ def test_s3_fixture_end_to_end(tmp_path):
             "--t_analysis",
             t_analysis.isoformat(),
             "--suite-name",
-            "dini",
+            suite_name,
             "--refs-root-path",
             str(tmp_path / "refs"),
             "--dst-zarr-output-path",
