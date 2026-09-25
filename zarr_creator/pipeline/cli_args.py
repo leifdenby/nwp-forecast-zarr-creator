@@ -20,6 +20,7 @@ def add_settings_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--dst-zarr-output-path", default=None)
     parser.add_argument("--source-profile", default=None)
     parser.add_argument("--dest-profile", default=None)
+    parser.add_argument("--src-anon", action="store_true", default=False)
 
 
 def settings_from_args(args: argparse.Namespace, base: Settings | None = None) -> Settings:
@@ -44,4 +45,6 @@ def settings_from_args(args: argparse.Namespace, base: Settings | None = None) -
         settings.src_aws_profile = args.source_profile
     if args.dest_profile is not None:
         settings.dst_aws_profile = args.dest_profile
+    if args.src_anon:
+        settings.src_anon = True
     return settings

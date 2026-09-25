@@ -88,7 +88,7 @@ def test_staging_used_when_set(tmp_path, monkeypatch):
     staged_with = []
     import shutil
 
-    def fake_stage(urls, tmpdir, profile=None):
+    def fake_stage(urls, tmpdir, profile=None, anon=False):
         os.makedirs(tmpdir, exist_ok=True)
         for url in urls:
             shutil.copy(url.replace("file://", ""), tmpdir)
@@ -108,7 +108,7 @@ def test_s3_no_temp_warns_and_attempts(monkeypatch):
     from loguru import logger
 
     settings = _settings(src_grib_root_uri="s3://bucket/ml")
-    monkeypatch.setattr(index_refs.storage, "find_missing", lambda urls, profile=None: [])
+    monkeypatch.setattr(index_refs.storage, "find_missing", lambda urls, profile=None, anon=False: [])
     indexed = []
     monkeypatch.setattr(index_refs, "_run_index", lambda inputs, nprocs=2: indexed.extend(inputs))
     monkeypatch.setattr(index_refs, "_run_build_refs", lambda *a, **k: None)

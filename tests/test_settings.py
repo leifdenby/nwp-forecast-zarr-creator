@@ -25,6 +25,7 @@ def test_defaults(monkeypatch):
         "SRC_AWS_PROFILE",
         "DST_AWS_PROFILE",
         "AWS_PROFILE",
+        "SRC_ANON",
     ):
         monkeypatch.delenv(var, raising=False)
     cfg = s.load_settings()
@@ -37,6 +38,7 @@ def test_defaults(monkeypatch):
     assert cfg.dst_zarr_output_path == s.DEFAULT_DST_ZARR_OUTPUT_PATH
     assert cfg.src_aws_profile is None
     assert cfg.dst_aws_profile is None
+    assert cfg.src_anon is False
 
 
 def test_env_overrides(monkeypatch):
@@ -94,6 +96,15 @@ def test_profile_fallback_matrix(monkeypatch):
     assert s.source_profile(cfg) == "src"
     assert s.dest_profile(cfg) == "base"
     assert s.source_profile(cfg, explicit="cli") == "cli"
+
+
+def test_src_anon_parsing(monkeypatch):
+    monkeypatch.delenv("SRC_ANON", raising=False)
+    assert s.load_settings().src_anon is False
+    monkeypatch.setenv("SRC_ANON", "1")
+    assert s.load_settings().src_anon is True
+    monkeypatch.setenv("SRC_ANON", "yes")
+    assert s.load_settings().src_anon is True
 
 
 def test_time_helpers():

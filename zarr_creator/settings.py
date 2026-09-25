@@ -49,6 +49,8 @@ class Settings:
     dst_zarr_output_path: str = DEFAULT_DST_ZARR_OUTPUT_PATH
     src_aws_profile: str | None = None
     dst_aws_profile: str | None = None
+    # Unsigned S3 reads (public CI fixture bucket). Never used for writes.
+    src_anon: bool = False
     # Raw env snapshot for provenance/debugging (no secrets stored here).
     _from_alias: bool = field(default=False, repr=False)
 
@@ -97,6 +99,7 @@ def load_settings() -> Settings:
         dst_aws_profile=os.environ.get("DST_AWS_PROFILE")
         or os.environ.get("AWS_PROFILE")
         or None,
+        src_anon=os.environ.get("SRC_ANON", "").lower() in {"1", "true", "yes"},
         _from_alias=from_alias,
     )
 

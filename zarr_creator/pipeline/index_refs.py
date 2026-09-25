@@ -62,12 +62,13 @@ def build_indexes_and_refs(
     """Build indexes and refs for one analysis time; return the refs dir."""
     t_analysis = require_utc(t_analysis)
     profile = source_profile(settings)
+    anon = settings.src_anon
 
     filenames = expected_grib_filenames(
         t_analysis, settings.max_hour, settings.member_id
     )
     urls = [storage.join(settings.src_grib_root_uri, name) for name in filenames]
-    missing = storage.find_missing(urls, profile)
+    missing = storage.find_missing(urls, profile, anon)
     if missing:
         raise FileNotFoundError(
             f"{len(missing)} expected GRIB file(s) missing for analysis time "
@@ -80,7 +81,7 @@ def build_indexes_and_refs(
             f"Staging GRIB files in {settings.src_grib_temp_path} before indexing"
         )
         src_dir = storage.download_to_temp(
-            urls, settings.src_grib_temp_path, profile
+            urls, settings.src_grib_temp_path, profile, anon
         )
     else:
         if _is_s3_uri(settings.src_grib_root_uri):

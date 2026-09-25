@@ -16,34 +16,36 @@ import fsspec
 from loguru import logger
 
 
-def resolve_fs(url: str, profile: str | None = None):
+def resolve_fs(url: str, profile: str | None = None, anon: bool = False):
     """Resolve ``(filesystem, path)`` for any URL via fsspec.
 
-    ``profile`` is only forwarded for ``s3://`` URLs.
+    ``profile``/``anon`` are only forwarded for ``s3://`` URLs. ``anon``
+    enables unsigned reads of public buckets (CI fixture consumption).
     """
     if url.startswith("s3://"):
-        kwargs = {}
+        kwargs: dict = {"anon": anon}
         if profile is not None:
             kwargs["profile"] = profile
         return fsspec.url_to_fs(url, **kwargs)
     return fsspec.url_to_fs(url)
 
 
-def exists(url: str, profile: str | None = None) -> bool:
+def exists(url: str, profile: str | None = None, anon: bool = False) -> bool:
     """Check existence of a single URL."""
-    fs, path = resolve_fs(url, profile)
+    fs, path = resolve_fs(url, profile, anon)
     return fs.exists(path)
 
 
-def find_missing(urls: list[str], profile: str | None = None) -> list[str]:
+def find_missing(
+    urls: list[str], profile: str | None = None, anon: bool = False
+) -> list[str]:
     """Return the subset of ``urls`` that do not exist."""
     if not urls:
         return []
-    fs, _ = resolve_fs(urls[0], profile)
     # Re-resolve per URL so mixed-protocol lists still work.
     missing = []
     for url in urls:
-        fs_u, path_u = resolve_fs(url, profile)
+        fs_u, path_u = resolve_fs(url, profile, anon)
         if not fs_u.exists(path_u):
             missing.append(url)
     return missing
@@ -59,6 +61,7 @@ def download_to_temp(
     src_urls: list[str],
     tmpdir: str,
     profile: str | None = None,
+    anon: bool = False,
 ) -> str:
     """Download ``src_urls`` into ``tmpdir`` (flat layout), return ``tmpdir``.
 
@@ -70,7 +73,7 @@ def download_to_temp(
     downloaded_this_attempt: list[str] = []
     failed: list[str] = []
     for url in src_urls:
-        fs, src_path = resolve_fs(url, profile)
+        fs, src_path = resolve_fs(url, profile, anon)
         dst = os.path.join(tmpdir, os.path.basename(src_path.rstrip("/")))
         if os.path.exists(dst):
             logger.info(f"Skipping existing: {dst}")
