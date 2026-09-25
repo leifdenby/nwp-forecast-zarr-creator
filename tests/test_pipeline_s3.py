@@ -35,6 +35,14 @@ def _manifest(src_uri):
             return json.load(f)
     except FileNotFoundError:
         pytest.skip(f"Could not read {manifest_url} — check FIXTURE_SRC_URI")
+    except OSError as exc:
+        # s3fs translates S3 auth failures (e.g. 403 on unsigned reads of a
+        # private bucket) to PermissionError: fail with remediation guidance
+        # rather than skipping, since the coordinates are likely wrong auth.
+        hint = storage.auth_error_hint(exc, anon=anon)
+        if hint is not None:
+            raise RuntimeError(hint) from exc
+        raise
 
 
 def _config():
@@ -49,6 +57,24 @@ def _config():
         int(manifest["max_hour"]),
         manifest.get("suite_name", "dini"),
     )
+
+
+def test_manifest_auth_error_fails_with_hint(monkeypatch):
+    """Regression test: unsigned reads of a private bucket must explain
+    themselves (raw PermissionError from s3fs is not actionable)."""
+    from tests.test_pipeline_s3 import _manifest
+
+    class Fake403FS:
+        def open(self, path):
+            raise PermissionError("Forbidden")
+
+    monkeypatch.setattr(
+        "zarr_creator.storage.resolve_fs",
+        lambda url, profile=None, anon=False: (Fake403FS(), "manifest.json"),
+    )
+    monkeypatch.setenv("SRC_ANON", "1")
+    with pytest.raises(RuntimeError, match="SRC_ANON"):
+        _manifest("s3://bucket/dini/2025-03-02T0600Z/ml")
 
 
 def test_s3_fixture_end_to_end(tmp_path):
