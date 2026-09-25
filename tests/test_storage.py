@@ -99,3 +99,13 @@ def test_cleanup_temp(tmp_path):
 def test_join():
     assert storage.join("s3://b/prefix", "a", "b") == "s3://b/prefix/a/b"
     assert storage.join("/mnt/root/", "f") == "/mnt/root/f"
+
+
+def test_show_file_bar_only_for_remote():
+    s3fs = pytest.importorskip("s3fs")
+    fs_s3 = s3fs.S3FileSystem(anon=True)
+    assert storage._show_file_bar(fs_s3)
+    fs_local, _ = storage.resolve_fs("/tmp/whatever")
+    assert not storage._show_file_bar(fs_local)
+    fs_mem, _ = storage.resolve_fs("memory://whatever")
+    assert not storage._show_file_bar(fs_mem)

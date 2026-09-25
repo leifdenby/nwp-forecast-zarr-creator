@@ -14,6 +14,7 @@ import shutil
 import sys
 
 import fsspec
+from fsspec.callbacks import TqdmCallback
 from loguru import logger
 from tqdm import tqdm
 
@@ -21,6 +22,39 @@ from tqdm import tqdm
 def _progress(desc: str, total: int):
     """File-count progress bar (suppressed when stderr is not a TTY)."""
     return tqdm(desc=desc, total=total, unit="files", disable=not sys.stderr.isatty())
+
+
+def _protocols(fs) -> set:
+    protocol = fs.protocol
+    return set(protocol) if isinstance(protocol, (tuple, list)) else {protocol}
+
+
+def _is_local_copy(fs) -> bool:
+    """Whether to copy via the local filesystem (vs fsspec put/get)."""
+    return bool(_protocols(fs) & {"file", "local"})
+
+
+def _show_file_bar(fs) -> bool:
+    """Whether a per-file byte bar is useful (remote transfers only).
+
+    Local and memory transfers don't report byte progress, so a bar would
+    sit at 0% — the outer file-count bar already covers those.
+    """
+    return not bool(_protocols(fs) & {"file", "local", "memory"})
+
+
+def _file_bar(desc: str):
+    """Per-file byte progress bar (suppressed when stderr is not a TTY)."""
+    return TqdmCallback(
+        tqdm_kwargs={
+            "desc": desc,
+            "unit": "B",
+            "unit_scale": True,
+            "unit_divisor": 1024,
+            "leave": False,
+            "disable": not sys.stderr.isatty(),
+        }
+    )
 
 
 def resolve_fs(url: str, profile: str | None = None, anon: bool = False):
@@ -90,7 +124,14 @@ def download_to_temp(
                 bar.update(1)
                 continue
             try:
-                fs.get_file(src_path, dst)
+                if _show_file_bar(fs):
+                    callback = _file_bar(f"↓ {os.path.basename(dst)}")
+                    try:
+                        fs.get_file(src_path, dst, callback=callback)
+                    finally:
+                        callback.close()
+                else:
+                    fs.get_file(src_path, dst)
                 downloaded_this_attempt.append(dst)
             except Exception:
                 logger.error(f"Failed: {url}")
@@ -117,12 +158,8 @@ def upload_tree(
     """Upload all files under ``local_dir`` (flat) to ``dest_root_uri``."""
     fs, dest_path = resolve_fs(dest_root_uri, profile)
     uploaded = []
-    protocol = fs.protocol
-    if isinstance(protocol, (tuple, list)):
-        protocols = set(protocol)
-    else:
-        protocols = {protocol}
-    is_local = bool(protocols & {"file", "local"})
+    is_local = _is_local_copy(fs)
+    show_bar = _show_file_bar(fs)
     if is_local:
         os.makedirs(dest_path, exist_ok=True)
     names = sorted(
@@ -143,7 +180,14 @@ def upload_tree(
                 dst_path = dest_path.rstrip("/") + "/" + name
                 if not overwrite and fs.exists(dst_path):
                     raise FileExistsError(f"Destination already exists: {dest_root_uri}/{name}")
-                fs.put_file(src, dst_path)
+                if show_bar:
+                    callback = _file_bar(f"↑ {name}")
+                    try:
+                        fs.put_file(src, dst_path, callback=callback)
+                    finally:
+                        callback.close()
+                else:
+                    fs.put_file(src, dst_path)
                 uploaded.append(f"{dest_root_uri.rstrip('/')}/{name}")
             bar.update(1)
     return uploaded
