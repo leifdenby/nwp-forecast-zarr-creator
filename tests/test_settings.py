@@ -107,6 +107,16 @@ def test_src_anon_parsing(monkeypatch):
     assert s.load_settings().src_anon is True
 
 
+def test_describe_source_auth():
+    assert s.describe_source_auth(True, "any-profile") == "unsigned (SRC_ANON=1)"
+    assert (
+        s.describe_source_auth(False, "my-profile") == "signed (profile 'my-profile')"
+    )
+    assert (
+        s.describe_source_auth(False, None) == "signed (default credential chain)"
+    )
+
+
 def test_time_helpers():
     t = _utc(2025, 3, 2, 6)
     assert s.analysis_time_str(t) == "2025030206"

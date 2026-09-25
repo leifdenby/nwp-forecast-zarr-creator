@@ -118,6 +118,15 @@ def dest_profile(settings: Settings, explicit: str | None = None) -> str | None:
     return explicit or settings.dst_aws_profile
 
 
+def describe_source_auth(anon: bool, profile: str | None) -> str:
+    """One-line description of how S3 source reads authenticate (for logs)."""
+    if anon:
+        return "unsigned (SRC_ANON=1)"
+    if profile:
+        return f"signed (profile '{profile}')"
+    return "signed (default credential chain)"
+
+
 def require_utc(t_analysis: datetime.datetime) -> datetime.datetime:
     """Validate that an analysis time is tz-aware UTC (``Z`` suffix)."""
     if t_analysis.tzinfo is None:

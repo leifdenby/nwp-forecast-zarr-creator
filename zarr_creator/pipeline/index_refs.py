@@ -24,6 +24,7 @@ from ..grib_definitions import set_local_eccodes_definitions_path
 from ..settings import (
     FILE_TYPES,
     Settings,
+    describe_source_auth,
     expected_grib_filenames,
     load_settings,
     refs_dir_for,
@@ -55,6 +56,18 @@ def _run_build_refs(index_files: list[str], refs_dir: str, prefix: str) -> None:
     )
 
 
+def _download_with_hint(urls, settings, profile, anon) -> str:
+    """Stage files, re-raising auth failures with remediation guidance."""
+    assert settings.src_grib_temp_path is not None
+    try:
+        return storage.download_to_temp(urls, settings.src_grib_temp_path, profile, anon)
+    except Exception as exc:
+        hint = storage.auth_error_hint(exc, anon=anon)
+        if hint is not None:
+            raise RuntimeError(hint) from exc
+        raise
+
+
 def build_indexes_and_refs(
     t_analysis: datetime.datetime,
     settings: Settings,
@@ -64,11 +77,22 @@ def build_indexes_and_refs(
     profile = source_profile(settings)
     anon = settings.src_anon
 
+    if _is_s3_uri(settings.src_grib_root_uri):
+        logger.info(
+            f"S3 source auth: {describe_source_auth(anon, profile)}"
+        )
+
     filenames = expected_grib_filenames(
         t_analysis, settings.max_hour, settings.member_id
     )
     urls = [storage.join(settings.src_grib_root_uri, name) for name in filenames]
-    missing = storage.find_missing(urls, profile, anon)
+    try:
+        missing = storage.find_missing(urls, profile, anon)
+    except Exception as exc:
+        hint = storage.auth_error_hint(exc, anon=anon)
+        if hint is not None:
+            raise RuntimeError(hint) from exc
+        raise
     if missing:
         raise FileNotFoundError(
             f"{len(missing)} expected GRIB file(s) missing for analysis time "
@@ -80,9 +104,7 @@ def build_indexes_and_refs(
         logger.info(
             f"Staging GRIB files in {settings.src_grib_temp_path} before indexing"
         )
-        src_dir = storage.download_to_temp(
-            urls, settings.src_grib_temp_path, profile, anon
-        )
+        src_dir = _download_with_hint(urls, settings, profile, anon)
     else:
         if _is_s3_uri(settings.src_grib_root_uri):
             logger.warning(

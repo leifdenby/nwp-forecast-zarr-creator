@@ -39,6 +39,7 @@ from loguru import logger
 
 from . import storage
 from .settings import (
+    describe_source_auth,
     expected_grib_filenames,
     refs_dir_name,
     require_utc,
@@ -87,6 +88,7 @@ def is_complete(
     member_id: str,
     file_types: tuple[str, ...],
     profile: str | None,
+    anon: bool = False,
 ) -> bool:
     """Check that all expected GRIB files exist for one analysis time."""
     urls = [
@@ -95,7 +97,7 @@ def is_complete(
             t_analysis, max_hour, member_id, file_types
         )
     ]
-    return not storage.find_missing(urls, profile)
+    return not storage.find_missing(urls, profile, anon)
 
 
 def resolve_analysis_time(
@@ -106,11 +108,12 @@ def resolve_analysis_time(
     file_types: tuple[str, ...],
     profile: str | None,
     now: datetime.datetime | None = None,
+    anon: bool = False,
 ) -> datetime.datetime:
     """Return the analysis time to snapshot (explicit or auto-found)."""
     if explicit is not None:
         if not is_complete(
-            explicit, source_uri, max_hour, member_id, file_types, profile
+            explicit, source_uri, max_hour, member_id, file_types, profile, anon
         ):
             raise FileNotFoundError(
                 f"Incomplete GRIB set for analysis time {explicit.isoformat()} "
@@ -120,7 +123,9 @@ def resolve_analysis_time(
     now = now or datetime.datetime.now(datetime.timezone.utc)
     for candidate in candidate_times(now):
         logger.info(f"Trying {candidate.isoformat()}")
-        if is_complete(candidate, source_uri, max_hour, member_id, file_types, profile):
+        if is_complete(
+            candidate, source_uri, max_hour, member_id, file_types, profile, anon
+        ):
             return candidate
     raise FileNotFoundError(
         f"No complete analysis found in {source_uri} "
@@ -275,6 +280,7 @@ def create_test_fixture(
     file_types: tuple[str, ...] = DEFAULT_FILE_TYPES,
     source_profile: str | None = None,
     dest_profile: str | None = None,
+    src_anon: bool = False,
     dry_run: bool = False,
     overwrite: bool = False,
     now: datetime.datetime | None = None,
@@ -283,9 +289,26 @@ def create_test_fixture(
     """Create the fixture; return the destination prefix URI (or ``dest_dir``)."""
     if suite_name not in VALID_SUITES:
         raise ValueError(f"suite_name must be one of {VALID_SUITES}, got: {suite_name!r}")
-    t_analysis = resolve_analysis_time(
-        t_analysis, source_uri, max_hour, member_id, file_types, source_profile, now
-    )
+    if source_uri.startswith("s3://"):
+        logger.info(
+            f"S3 source auth: {describe_source_auth(src_anon, source_profile)}"
+        )
+    try:
+        t_analysis = resolve_analysis_time(
+            t_analysis,
+            source_uri,
+            max_hour,
+            member_id,
+            file_types,
+            source_profile,
+            now,
+            src_anon,
+        )
+    except Exception as exc:
+        hint = storage.auth_error_hint(exc, anon=src_anon)
+        if hint is not None:
+            raise RuntimeError(hint) from exc
+        raise
     names = expected_grib_filenames(t_analysis, max_hour, member_id, file_types)
     src_urls = [storage.join(source_uri, name) for name in names]
 
@@ -295,7 +318,7 @@ def create_test_fixture(
         logger.info(
             f"Staging {t_analysis.isoformat()} from {source_uri} to {dest_dir}"
         )
-        storage.download_to_temp(src_urls, dest_dir, source_profile)
+        storage.download_to_temp(src_urls, dest_dir, source_profile, src_anon)
         logger.info(
             "Staged. Point the pipeline at it with:\n"
             f"  export SRC_GRIB_ROOT_URI={dest_dir}\n"
@@ -324,7 +347,15 @@ def create_test_fixture(
 
     with tempfile.TemporaryDirectory(prefix="nwp-fixture-") as tmpdir:
         grib_dir = os.path.join(tmpdir, "ml")
-        staged_dir = storage.download_to_temp(src_urls, grib_dir, source_profile)
+        try:
+            staged_dir = storage.download_to_temp(
+                src_urls, grib_dir, source_profile, src_anon
+            )
+        except Exception as exc:
+            hint = storage.auth_error_hint(exc, anon=src_anon)
+            if hint is not None:
+                raise RuntimeError(hint) from exc
+            raise
         staged_files = [
             os.path.join(staged_dir, name)
             for name in sorted(os.listdir(staged_dir))
@@ -386,6 +417,12 @@ def main(argv=None) -> str:
     parser.add_argument("--file-types", default=None)
     parser.add_argument("--source-profile", default=None)
     parser.add_argument("--dest-profile", default=None)
+    parser.add_argument(
+        "--src-anon",
+        action="store_true",
+        default=None,
+        help="Unsigned S3 source reads (public buckets).",
+    )
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--overwrite", action="store_true")
     parser.add_argument(
@@ -420,6 +457,10 @@ def main(argv=None) -> str:
     dest_profile = args.dest_profile or os.environ.get(
         "DST_AWS_PROFILE", os.environ.get("AWS_PROFILE")
     )
+    if args.src_anon is not None:
+        src_anon = args.src_anon
+    else:
+        src_anon = os.environ.get("SRC_ANON", "").lower() in {"1", "true", "yes"}
 
     return create_test_fixture(
         t_analysis=_parse_t_analysis(args.analysis_time),
@@ -431,6 +472,7 @@ def main(argv=None) -> str:
         file_types=file_types,
         source_profile=source_profile,
         dest_profile=dest_profile,
+        src_anon=src_anon,
         dry_run=args.dry_run,
         overwrite=args.overwrite,
         dest_dir=args.dest_dir,

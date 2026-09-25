@@ -44,6 +44,20 @@ def test_missing_files_raise(tmp_path):
         index_refs.build_indexes_and_refs(_utc(2025, 3, 2, 6), settings)
 
 
+def test_s3_auth_error_gets_remediation_hint(monkeypatch):
+    settings = _settings(src_grib_root_uri="s3://bucket/ml")
+
+    class Fake403(Exception):
+        response = {"Error": {"Code": "403"}}
+
+    def raise_403(urls, profile=None, anon=False):
+        raise Fake403("An error occurred (403) when calling HeadObject: Forbidden")
+
+    monkeypatch.setattr(index_refs.storage, "find_missing", raise_403)
+    with pytest.raises(RuntimeError, match="SRC_ANON"):
+        index_refs.build_indexes_and_refs(_utc(2025, 3, 2, 6), settings)
+
+
 def test_indexes_in_place_no_staging(tmp_path, monkeypatch):
     src = tmp_path / "ml"
     src.mkdir()

@@ -207,3 +207,45 @@ def cleanup_temp(path: str) -> None:
     if path and os.path.isdir(path):
         logger.info(f"Deleting temporary storage {path}")
         shutil.rmtree(path)
+
+
+_AUTH_ERROR_MARKERS = (
+    "403",
+    "forbidden",
+    "accessdenied",
+    "invalidaccesskeyid",
+    "signaturedoesnotmatch",
+    "nocredentials",
+    "missingcredentials",
+    "expiredtoken",
+    "invalidclienttokenid",
+)
+
+
+def auth_error_hint(exc: Exception, *, anon: bool) -> str | None:
+    """Remediation guidance if ``exc`` looks like an S3 auth failure.
+
+    Returns None for non-auth errors. Catches the classic 403 confusion in
+    both directions: unsigned reads against a private bucket, and signed
+    reads with bad/missing credentials (or against a public bucket that
+    needs no signing).
+    """
+    code = ""
+    response = getattr(exc, "response", None)
+    if isinstance(response, dict):
+        code = str(response.get("Error", {}).get("Code", ""))
+    text = f"{code} {exc}".lower()
+    if not any(marker in text for marker in _AUTH_ERROR_MARKERS):
+        return None
+    if anon:
+        return (
+            f"S3 auth error ({exc}): reads are unsigned (SRC_ANON=1), "
+            "so the bucket is likely private. Unset SRC_ANON and set "
+            "SRC_AWS_PROFILE (or AWS_PROFILE) so requests are signed via ~/.aws."
+        )
+    return (
+        f"S3 auth error ({exc}): signed reads failed. Check the credentials "
+        "can access the bucket (SRC_AWS_PROFILE/AWS_PROFILE via ~/.aws, or the "
+        "container IAM role); for a public bucket set SRC_ANON=1 to use "
+        "unsigned reads instead."
+    )

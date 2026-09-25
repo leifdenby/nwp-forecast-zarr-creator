@@ -101,6 +101,33 @@ def test_join():
     assert storage.join("/mnt/root/", "f") == "/mnt/root/f"
 
 
+class _Fake403(Exception):
+    def __init__(self):
+        super().__init__("An error occurred (403) when calling HeadObject: Forbidden")
+        self.response = {"Error": {"Code": "403"}}
+
+
+def test_auth_error_hint_anon_points_to_signing():
+    hint = storage.auth_error_hint(_Fake403(), anon=True)
+    assert hint is not None
+    assert "SRC_ANON" in hint
+    assert "SRC_AWS_PROFILE" in hint
+
+
+def test_auth_error_hint_signed_points_to_anon():
+    hint = storage.auth_error_hint(_Fake403(), anon=False)
+    assert hint is not None
+    assert "SRC_ANON=1" in hint
+
+
+def test_auth_error_hint_ignores_non_auth_errors():
+    assert storage.auth_error_hint(RuntimeError("boom"), anon=True) is None
+    assert storage.auth_error_hint(RuntimeError("boom"), anon=False) is None
+    assert (
+        storage.auth_error_hint(FileNotFoundError("missing"), anon=True) is None
+    )
+
+
 def test_show_file_bar_only_for_remote():
     s3fs = pytest.importorskip("s3fs")
     fs_s3 = s3fs.S3FileSystem(anon=True)

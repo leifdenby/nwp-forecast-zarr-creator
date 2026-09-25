@@ -18,7 +18,7 @@ import isodate
 from loguru import logger
 
 from .. import storage
-from ..settings import Settings, load_settings, refs_dir_for, require_utc
+from ..settings import Settings, describe_source_auth, load_settings, refs_dir_for, require_utc
 from .cli_args import add_settings_arguments, settings_from_args
 from .index_refs import build_indexes_and_refs
 
@@ -163,6 +163,11 @@ def main(argv=None) -> None:
     logger.info(f"REFS_ROOT_PATH: {settings.refs_root_path}")
     logger.info(f"SRC_GRIB_TEMP_PATH: {settings.src_grib_temp_path or 'not set'}")
     logger.info(f"SUITE_NAME: {settings.suite_name}")
+    if settings.src_grib_root_uri.startswith("s3://"):
+        logger.info(
+            f"S3 source auth: "
+            f"{describe_source_auth(settings.src_anon, settings.src_aws_profile)}"
+        )
 
     if args.watch:
         watch_loop(

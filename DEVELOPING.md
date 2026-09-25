@@ -164,6 +164,20 @@ After upload the script verifies the destination and prints the CI env block
 warning, layout, usage) and `manifest.json` (suite, sizes, sha256, git sha, eccodes
 version) travel with the data.
 
+### S3 auth troubleshooting
+
+Every S3-reading command logs its auth mode at startup, e.g.
+`S3 source auth: unsigned (SRC_ANON=1)` or
+`S3 source auth: signed (profile 'my-profile')`. On 403/AccessDenied
+failures it also prints how to resolve the mismatch:
+
+- unsigned reads (`SRC_ANON=1`) against a **private** bucket → unset
+  `SRC_ANON` and set `SRC_AWS_PROFILE` (or `AWS_PROFILE`) so requests are
+  signed via `~/.aws`;
+- signed reads with bad/missing credentials → check the profile can access
+  the bucket (or the container IAM role); for a **public** bucket set
+  `SRC_ANON=1` instead.
+
 ## 3. Run the pipeline manually in dev
 
 Inside the Dev Container terminal:
