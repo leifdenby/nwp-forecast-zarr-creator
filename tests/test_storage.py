@@ -109,3 +109,30 @@ def test_show_file_bar_only_for_remote():
     assert not storage._show_file_bar(fs_local)
     fs_mem, _ = storage.resolve_fs("memory://whatever")
     assert not storage._show_file_bar(fs_mem)
+
+
+def test_upload_to_s3_uses_small_chunks_for_progress(tmp_path, monkeypatch):
+    """s3fs' 50MiB default parts stall the per-file bar; assert override."""
+    src = tmp_path / "src"
+    src.mkdir()
+    (src / "a.bin").write_bytes(b"x" * 100)
+
+    seen = {}
+
+    class FakeS3:
+        protocol = "s3"
+
+        def exists(self, path):
+            return False
+
+        def put_file(self, src, dst, callback=None, **kwargs):
+            seen.update(kwargs)
+            seen["callback"] = callback
+
+    monkeypatch.setattr(
+        storage, "resolve_fs", lambda url, profile=None, anon=False: (FakeS3(), "dest")
+    )
+    uploaded = storage.upload_tree(str(src), "s3://bucket/dest")
+    assert uploaded == ["s3://bucket/dest/a.bin"]
+    assert seen["chunksize"] == storage._S3_PUT_CHUNKSIZE
+    assert seen["callback"] is not None

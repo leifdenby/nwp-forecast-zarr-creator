@@ -24,6 +24,12 @@ def _progress(desc: str, total: int):
     return tqdm(desc=desc, total=total, unit="files", disable=not sys.stderr.isatty())
 
 
+# s3fs uploads in 50MiB parts by default, so the per-file bar would sit at
+# 0% for minutes on slow links. Smaller parts stream progress more often;
+# S3 requires >=5MiB per part (except the last).
+_S3_PUT_CHUNKSIZE = 8 * 1024 * 1024
+
+
 def _protocols(fs) -> set:
     protocol = fs.protocol
     return set(protocol) if isinstance(protocol, (tuple, list)) else {protocol}
@@ -160,6 +166,9 @@ def upload_tree(
     uploaded = []
     is_local = _is_local_copy(fs)
     show_bar = _show_file_bar(fs)
+    # Smaller parts than s3fs' 50MiB default so the per-file bar advances
+    # steadily; only s3fs understands this kwarg.
+    put_kwargs = {"chunksize": _S3_PUT_CHUNKSIZE} if "s3" in _protocols(fs) else {}
     if is_local:
         os.makedirs(dest_path, exist_ok=True)
     names = sorted(
@@ -183,11 +192,11 @@ def upload_tree(
                 if show_bar:
                     callback = _file_bar(f"↑ {name}")
                     try:
-                        fs.put_file(src, dst_path, callback=callback)
+                        fs.put_file(src, dst_path, callback=callback, **put_kwargs)
                     finally:
                         callback.close()
                 else:
-                    fs.put_file(src, dst_path)
+                    fs.put_file(src, dst_path, **put_kwargs)
                 uploaded.append(f"{dest_root_uri.rstrip('/')}/{name}")
             bar.update(1)
     return uploaded
