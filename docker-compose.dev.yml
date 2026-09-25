@@ -14,3 +14,10 @@ services:
       - ./tmp:/tmp
     environment:
       SRC_GRIB_TEMP_PATH: ""
+      # Local input (bind-mounted above); set to s3://bucket/prefix to read
+      # from object storage instead (profile from ~/.aws via AWS_PROFILE).
+      SRC_GRIB_ROOT_URI: "/mnt/harmonie-data-from-pds/ml"
+      # Local zarr output; override with an s3://... format string to write
+      # elsewhere, e.g. s3://bucket/{suite_name}/{member}/{t_analysis}/{dataset_id}.zarr
+      DST_ZARR_OUTPUT_PATH: "file:///tmp/nwp-zarr-output/{suite_name}-recent/{dataset_id}.zarr"
+      # AWS_PROFILE: "my-profile"
