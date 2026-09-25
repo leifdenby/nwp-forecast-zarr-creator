@@ -11,9 +11,16 @@ via botocore/s3fs.
 
 import os
 import shutil
+import sys
 
 import fsspec
 from loguru import logger
+from tqdm import tqdm
+
+
+def _progress(desc: str, total: int):
+    """File-count progress bar (suppressed when stderr is not a TTY)."""
+    return tqdm(desc=desc, total=total, unit="files", disable=not sys.stderr.isatty())
 
 
 def resolve_fs(url: str, profile: str | None = None, anon: bool = False):
@@ -72,19 +79,25 @@ def download_to_temp(
     os.makedirs(tmpdir, exist_ok=True)
     downloaded_this_attempt: list[str] = []
     failed: list[str] = []
-    for url in src_urls:
-        fs, src_path = resolve_fs(url, profile, anon)
-        dst = os.path.join(tmpdir, os.path.basename(src_path.rstrip("/")))
-        if os.path.exists(dst):
-            logger.info(f"Skipping existing: {dst}")
-            continue
-        logger.info(f"Downloading: {url}")
-        try:
-            fs.get_file(src_path, dst)
-            downloaded_this_attempt.append(dst)
-        except Exception:
-            logger.error(f"Failed: {url}")
-            failed.append(url)
+    skipped = 0
+    with _progress(f"Downloading to {tmpdir}", total=len(src_urls)) as bar:
+        for url in src_urls:
+            fs, src_path = resolve_fs(url, profile, anon)
+            dst = os.path.join(tmpdir, os.path.basename(src_path.rstrip("/")))
+            if os.path.exists(dst):
+                logger.debug(f"Skipping existing: {dst}")
+                skipped += 1
+                bar.update(1)
+                continue
+            try:
+                fs.get_file(src_path, dst)
+                downloaded_this_attempt.append(dst)
+            except Exception:
+                logger.error(f"Failed: {url}")
+                failed.append(url)
+            bar.update(1)
+    if skipped:
+        logger.info(f"Skipped {skipped} existing file(s) in {tmpdir}")
     if failed:
         for dst in downloaded_this_attempt:
             try:
@@ -112,22 +125,27 @@ def upload_tree(
     is_local = bool(protocols & {"file", "local"})
     if is_local:
         os.makedirs(dest_path, exist_ok=True)
-    for name in sorted(os.listdir(local_dir)):
-        src = os.path.join(local_dir, name)
-        if not os.path.isfile(src):
-            continue
-        if is_local:
-            dst = os.path.join(dest_path, name)
-            if not overwrite and os.path.exists(dst):
-                raise FileExistsError(f"Destination already exists: {dst}")
-            shutil.copy2(src, dst)
-            uploaded.append(dst)
-        else:
-            dst_path = dest_path.rstrip("/") + "/" + name
-            if not overwrite and fs.exists(dst_path):
-                raise FileExistsError(f"Destination already exists: {dest_root_uri}/{name}")
-            fs.put_file(src, dst_path)
-            uploaded.append(f"{dest_root_uri.rstrip('/')}/{name}")
+    names = sorted(
+        name
+        for name in os.listdir(local_dir)
+        if os.path.isfile(os.path.join(local_dir, name))
+    )
+    with _progress(f"Uploading to {dest_root_uri}", total=len(names)) as bar:
+        for name in names:
+            src = os.path.join(local_dir, name)
+            if is_local:
+                dst = os.path.join(dest_path, name)
+                if not overwrite and os.path.exists(dst):
+                    raise FileExistsError(f"Destination already exists: {dst}")
+                shutil.copy2(src, dst)
+                uploaded.append(dst)
+            else:
+                dst_path = dest_path.rstrip("/") + "/" + name
+                if not overwrite and fs.exists(dst_path):
+                    raise FileExistsError(f"Destination already exists: {dest_root_uri}/{name}")
+                fs.put_file(src, dst_path)
+                uploaded.append(f"{dest_root_uri.rstrip('/')}/{name}")
+            bar.update(1)
     return uploaded
 
 
