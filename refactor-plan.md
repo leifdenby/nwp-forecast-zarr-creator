@@ -109,9 +109,9 @@
 **Acceptance:** `docker build` succeeds; container starts in `--watch` mode without bash.
 
 ## Step 7: Test-fixture creation script (frozen GRIB sample for CI)
-**New file:** `zarr_creator/create_fixture.py` — Python only (reuses `settings.py` + `storage.py`, ports `scripts/download_harmonie_data.sh` logic; no `aws` CLI subprocess).
+**New file:** `zarr_creator/create_test_fixture.py` — Python only (reuses `settings.py` + `storage.py`, ports `scripts/download_harmonie_data.sh` logic; no `aws` CLI subprocess).
 
-- [ ] CLI: `python -m zarr_creator.create_fixture --analysis-time <ISO-Z, optional> --source s3://harmonie-data/ml --fixture-bucket $FIXTURE_BUCKET --member-id CONTROL__dmi --max-hour 2 --file-types "sf pl" [--dry-run] [--overwrite]`, plus `--source-profile` (`SRC_AWS_PROFILE` -> `AWS_PROFILE`) and `--dest-profile` (`DST_AWS_PROFILE` -> `AWS_PROFILE`); explicit flags win over env. Endpoint/keys/region come from `~/.aws/config` + `~/.aws/credentials` for the selected profile.
+- [ ] CLI: `python -m zarr_creator.create_test_fixture --analysis-time <ISO-Z, optional> --source s3://harmonie-data/ml --fixture-bucket $FIXTURE_BUCKET --member-id CONTROL__dmi --max-hour 2 --file-types "sf pl" [--dry-run] [--overwrite]`, plus `--source-profile` (`SRC_AWS_PROFILE` -> `AWS_PROFILE`) and `--dest-profile` (`DST_AWS_PROFILE` -> `AWS_PROFILE`); explicit flags win over env. Endpoint/keys/region come from `~/.aws/config` + `~/.aws/credentials` for the selected profile.
 - [ ] Resolve `analysis_time`: explicit value validated (`Z`-suffix UTC) or auto-find latest complete set (port lag=3h, step=3h, max 8 attempts, `floor((now-lag)/3h)` + `fs_src.exists` completeness check over `0..MAX_HOUR x sf/pl`, same as download script; discard partial attempts).
 - [ ] Operational source note: `s3://harmonie-data/ml` retains ~2 weeks, so fixture is a frozen copy; record source URI + retention warning in provenance.
 - [ ] Stage to local tmp via `storage.download_to_temp` (skip-existing, progress logging); abort with missing-file list if incomplete.
@@ -135,7 +135,7 @@
 - [ ] Manual validation: minio + real-bucket smoke; `--prefix` refs resolve; temp cleanup happens; profile chain (`SRC_AWS_PROFILE` / `DST_AWS_PROFILE` -> `AWS_PROFILE`, details from `~/.aws`) verified for non-public paths.
 
 ## Step 9: Remove bash + update docs
-- [ ] Delete `run.sh`, `build_indexes_and_refs.sh`, `script_defaults.sh`, and `scripts/download_harmonie_data.sh` (replaced by `storage.py` + `create_fixture.py`).
+- [ ] Delete `run.sh`, `build_indexes_and_refs.sh`, `script_defaults.sh`, and `scripts/download_harmonie_data.sh` (replaced by `storage.py` + `create_test_fixture.py`).
 - [ ] Update `README.md` (Usage, Runtime Defaults table → new env vars incl. `SRC_GRIB_ROOT_URI=s3://...`, `DST_ZARR_OUTPUT_PATH`, `SRC_AWS_PROFILE`/`DST_AWS_PROFILE`/`AWS_PROFILE` with `~/.aws` note), `CHANGELOG.md`.
   - [ ] State configuration precedence explicitly: **CLI flag > environment variable > built-in default**, with a worked example (`--max-hour 12` beats `MAX_HOUR=12` beats built-in `36`). Note the container is configured purely via environment (`ENTRYPOINT` takes no config args); flags are manual overrides.
 - [ ] Update `DEVELOPING.md`:

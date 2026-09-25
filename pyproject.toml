@@ -31,7 +31,7 @@ license = {text = "MIT"}
 
 [project.scripts]
 nwp-zarr = "zarr_creator.pipeline.runner:main"
-nwp-fixture = "zarr_creator.create_fixture:main"
+nwp-fixture = "zarr_creator.create_test_fixture:main"
 
 [tool.pdm]
 distribution = true
