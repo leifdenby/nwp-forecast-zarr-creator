@@ -90,11 +90,17 @@ def test_s3_fixture_end_to_end(tmp_path):
         member_id="CONTROL__dmi",
         max_hour=max_hour,
         suite_name=suite_name,
-        src_grib_temp_path=str(tmp_path / "stage"),
+        # Honor a pre-warmed staging dir (e.g. the CI cache mount);
+        # otherwise stage in a fresh temp dir.
+        src_grib_temp_path=os.environ.get(
+            "SRC_GRIB_TEMP_PATH", str(tmp_path / "stage")
+        ),
         dst_zarr_output_path=f"file://{tmp_path}/out/{{dataset_id}}.zarr",
-        src_aws_profile=None,
+        src_aws_profile=os.environ.get(
+            "SRC_AWS_PROFILE", os.environ.get("AWS_PROFILE")
+        ),
         dst_aws_profile=None,
-        src_anon=True,
+        src_anon=os.environ.get("SRC_ANON", "").lower() in {"1", "true", "yes"},
     )
     refs_dir = build_indexes_and_refs(t_analysis, settings)
     assert refs_dir == refs_dir_for(t_analysis, settings)

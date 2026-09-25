@@ -42,8 +42,10 @@ def _is_s3_uri(uri: str) -> bool:
 def _run_index(inputs: list[str], nprocs: int = 2) -> None:
     import gribscan.tools
 
+    # -f: always rebuild; the staging dir may be a warm cache containing
+    # indexes from a previous run (same fixture content, but rebuild anyway).
     gribscan.tools.create_index.main(
-        [*inputs, "-n", str(nprocs)], standalone_mode=False
+        [*inputs, "-n", str(nprocs), "-f"], standalone_mode=False
     )
 
 
