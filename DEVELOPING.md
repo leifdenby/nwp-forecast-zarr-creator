@@ -198,8 +198,9 @@ Unit tests run unconditionally; integration tests are gated:
 
 ```bash
 # S3 fixture end-to-end (needs the frozen bucket from §2b)
-RUN_S3_E2E=1 SRC_ANON=1 FIXTURE_SRC_URI=s3://<bucket>/<analysis>/ml \
-  FIXTURE_T_ANALYSIS=2025-03-02T00:00:00Z FIXTURE_MAX_HOUR=2 \
+# S3 fixture end-to-end (needs the frozen bucket from §2b; skips when unset).
+# Analysis time, max hour, and suite come from the fixture's manifest.json.
+FIXTURE_SRC_URI=s3://<bucket>/<suite>/<analysis>/ml SRC_ANON=1 \
   uv run pytest -m integration
 ```
 

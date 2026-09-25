@@ -1,18 +1,18 @@
 """S3 end-to-end test against the frozen public fixture bucket.
 
 Runs the full pipeline (index -> refs -> zarr) for the fixture's trimmed
-analysis time. Gated behind ``RUN_S3_E2E=1`` plus fixture coordinates::
+analysis time. Only ``FIXTURE_SRC_URI`` is configured; analysis time,
+max hour, and suite are read from the fixture's ``manifest.json`` (so they
+cannot disagree with the data)::
 
-    RUN_S3_E2E=1     FIXTURE_SRC_URI=s3://<bucket>/<suite>/<analysis>/ml \\
-        FIXTURE_T_ANALYSIS=2025-03-02T00:00:00Z FIXTURE_MAX_HOUR=2 \\
-        FIXTURE_SUITE_NAME=dini \\
+    FIXTURE_SRC_URI=s3://<bucket>/<suite>/<analysis>/ml \\
         uv run pytest -m integration
 
-Reads are unsigned (``SRC_ANON=1``); output goes to a local temp dir.
-The conversion ``--suite-name`` follows ``FIXTURE_SUITE_NAME``.
+Skips when ``FIXTURE_SRC_URI`` is unset. Reads are unsigned (``SRC_ANON=1``);
+output goes to a local temp dir.
 """
 
-import datetime
+import json
 import os
 
 import isodate
@@ -21,24 +21,33 @@ import xarray as xr
 
 pytestmark = pytest.mark.integration
 
-REQUIRED = ("FIXTURE_SRC_URI", "FIXTURE_T_ANALYSIS", "FIXTURE_MAX_HOUR")
 
+def _manifest(src_uri):
+    """Load the fixture manifest (sibling of the ``.../ml`` URI)."""
+    from zarr_creator import storage
 
-def _enabled():
-    return os.environ.get("RUN_S3_E2E", "").lower() in {"1", "true", "yes"}
+    anon = os.environ.get("SRC_ANON", "").lower() in {"1", "true", "yes"}
+    prefix = src_uri.rstrip("/").rsplit("/", 1)[0]
+    manifest_url = f"{prefix}/manifest.json"
+    fs, path = storage.resolve_fs(manifest_url, anon=anon)
+    try:
+        with fs.open(path) as f:
+            return json.load(f)
+    except FileNotFoundError:
+        pytest.skip(f"Could not read {manifest_url} — check FIXTURE_SRC_URI")
 
 
 def _config():
-    if not _enabled():
-        pytest.skip("Set RUN_S3_E2E=1 to run the S3-backed e2e test")
-    missing = [v for v in REQUIRED if not os.environ.get(v)]
-    if missing:
-        pytest.skip(f"Missing fixture env vars: {missing}")
+    """Return fixture coordinates from the manifest, or skip."""
+    src_uri = os.environ.get("FIXTURE_SRC_URI")
+    if not src_uri:
+        pytest.skip("FIXTURE_SRC_URI not set — skipping S3 e2e test")
+    manifest = _manifest(src_uri)
     return (
-        os.environ["FIXTURE_SRC_URI"],
-        isodate.parse_datetime(os.environ["FIXTURE_T_ANALYSIS"]),
-        int(os.environ["FIXTURE_MAX_HOUR"]),
-        os.environ.get("FIXTURE_SUITE_NAME", "dini"),
+        src_uri,
+        isodate.parse_datetime(manifest["analysis_time"]),
+        int(manifest["max_hour"]),
+        manifest.get("suite_name", "dini"),
     )
 
 

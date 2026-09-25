@@ -19,9 +19,10 @@ jobs:
         run: uv run pytest -m "not integration" -q
 
   s3-e2e:
-    # Full pipeline against the frozen public fixture bucket. The fixture
-    # does not exist yet: configure FIXTURE_SRC_URI/T_ANALYSIS/MAX_HOUR as
-    # repository variables once `create_test_fixture` has been run.
+    # Full pipeline against the frozen public fixture bucket. Analysis time,
+    # max hour, and suite are read from the fixture's manifest.json, so only
+    # the source URI is configured (as a repository variable once
+    # `create_test_fixture` has been run).
     name: s3 fixture e2e
     runs-on: ubuntu-latest
     if: vars.FIXTURE_SRC_URI != ''
@@ -41,11 +42,8 @@ jobs:
       - name: Run e2e in container (eccodes + DMI definitions included)
         run: >
           docker run --rm
-          -e RUN_S3_E2E=1
           -e SRC_ANON=1
           -e AWS_EC2_METADATA_DISABLED=true
           -e FIXTURE_SRC_URI="${{ vars.FIXTURE_SRC_URI }}"
-          -e FIXTURE_T_ANALYSIS="${{ vars.FIXTURE_T_ANALYSIS }}"
-          -e FIXTURE_MAX_HOUR="${{ vars.FIXTURE_MAX_HOUR }}"
           nwp-zarr-e2e:ci
           uv run pytest tests/test_pipeline_s3.py -q
