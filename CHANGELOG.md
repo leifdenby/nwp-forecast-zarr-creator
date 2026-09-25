@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- Python-only orchestration: `run.sh`, `build_indexes_and_refs.sh`,
+  `script_defaults.sh`, and `scripts/download_harmonie_data.sh` are removed,
+  replaced by `zarr_creator.settings`, `zarr_creator.storage` (fsspec),
+  `zarr_creator.pipeline.index_refs`, and `zarr_creator.pipeline.runner`
+  (`python -m zarr_creator run [--watch]`).
+- S3-native GRIB input: `SRC_GRIB_ROOT_URI` accepts `s3://bucket/prefix` or a
+  local path (auto-dispatched via fsspec); per-side AWS profiles
+  (`SRC_AWS_PROFILE`/`DST_AWS_PROFILE` → `AWS_PROFILE`, details from `~/.aws`).
+- Single configurable zarr destination `DST_ZARR_OUTPUT_PATH` (full
+  format-string path, local or S3); `--skip-s3-bucket-upload` is removed.
+- New `python -m zarr_creator.create_test_fixture` for frozen S3 test fixtures
+  (`--dest-dir` stages locally for development).
+
 ## [v0.8.0]
 
 This release adds functionality for converting IG grib files, while still defaulting to DINI configuration if no SUITE_NAME environment variable is set.

@@ -18,7 +18,9 @@ development.
 - Docker Desktop (or Docker Engine + Compose)
 - VS Code
 - VS Code extension: `Dev Containers`
-- AWS credentials configured if you need to download GRIB files from S3
+- AWS credentials (`~/.aws`, via `SRC_AWS_PROFILE`/`DST_AWS_PROFILE` or
+  `AWS_PROFILE`) if you read/write S3; the public test fixture needs none
+  (`SRC_ANON=1`)
 
 ## 1. Open in Dev Container
 
@@ -49,9 +51,9 @@ export DEV_CONTAINER_PLATFORM=linux/x86_64
 ```
 
 **note**: `SRC_GRIB_TEMP_PATH` is not set by default in the dev container, so
-`build_indexes_and_refs.sh` indexes directly from `SRC_GRIB_ROOT_PATH` rather
-than copying to a temp path inside the container. This is to avoid unnecessary
-copying of large GRIB files during development.
+indexing happens in place from `SRC_GRIB_ROOT_URI` rather than staging to a
+temp path inside the container. This is to avoid unnecessary copying of
+large GRIB files during development.
 
 To open a shell inside the already-running dev container from your host
 terminal:
@@ -62,58 +64,122 @@ docker compose -f docker-compose.dev.yml exec app bash
 
 ## 2. Prepare input data locally
 
-The production system reads from `/mnt/harmonie-data-from-pds/ml` (S3FS mount).
-For local development, populate `./data/harmonie/ml` instead.
+The production system reads GRIBs from `SRC_GRIB_ROOT_URI` (a local path or
+`s3://bucket/prefix`, dispatched via fsspec). For local development you have
+two options:
 
-Download files for one analysis time:
-
-```bash
-./scripts/download_harmonie_data.sh 2025-03-02T00:00:00Z
-```
-
-If you omit `analysis_time`, the script tries the most recent 3-hour analysis
-interval and automatically retries older 3-hour intervals until it finds a
-complete set of expected files:
+### Option A: read the public S3 test fixture (no download needed)
 
 ```bash
-./scripts/download_harmonie_data.sh
+export SRC_GRIB_ROOT_URI="s3://uwcw-sample-grib2zarr-conversion-datasets/<YYYY-MM-DDTHHMMZ>/ml"
+export MAX_HOUR=2
+export SRC_ANON=1
 ```
 
-If you need a specific AWS credentials profile, set `AWS_PROFILE` when running
-the script:
+See §2b for how the fixture is created and for the frozen coordinates.
+
+### Option B: stage operational files to `./data/harmonie/ml`
+
+`./data/harmonie/ml` is mounted inside the container as
+`/mnt/harmonie-data-from-pds/ml`. Stage one analysis time there (existing
+files are skipped, so the directory acts as a cache):
 
 ```bash
-AWS_PROFILE=my-profile ./scripts/download_harmonie_data.sh 2025-03-02T00:00:00Z
+uv run python -m zarr_creator.create_test_fixture --analysis-time 2025-03-02T00:00:00Z --dest-dir ./data/harmonie/ml
 ```
 
-This downloads files from `s3://harmonie-data/ml` to `./data/harmonie/ml`
-which is mounted inside the container as `/mnt/harmonie-data-from-pds/ml`.
+If you omit `analysis_time`, the most recent complete 3-hour analysis
+interval is used (older 3-hour intervals are retried automatically):
 
-Optional environment overrides:
+```bash
+uv run python -m zarr_creator.create_test_fixture --dest-dir ./data/harmonie/ml
+```
 
-- `S3_BUCKET` (default: `harmonie-data`)
-- `S3_PREFIX` (default: `ml`)
+Source selection and credentials:
+
+```bash
+# different source bucket/prefix
+uv run python -m zarr_creator.create_test_fixture --source s3://harmonie-data/ml --dest-dir ./data/harmonie/ml
+# separate AWS profiles per side (endpoint/keys/region from ~/.aws)
+export SRC_AWS_PROFILE=my-source-profile
+```
+
+This stages files from `s3://harmonie-data/ml` (operational bucket, retains
+~2 weeks) to `./data/harmonie/ml`.
+
+Optional environment overrides (also accepted as flags, e.g. `--max-hour`):
+
+- `MAX_HOUR` (default: `2` for fixtures; pipeline default is `36`)
 - `MEMBER_ID` (default: `CONTROL__dmi`)
-- `MAX_HOUR` (default: `36`)
 - `FILE_TYPES` (default: `sf pl`)
 
 Example:
 
 ```bash
-AWS_ACCESS_KEY_ID=<val> AWS_SECRET_ACCESS_KEY=<val> MAX_HOUR=12 ./scripts/download_harmonie_data.sh 2025-03-02T00:00:00Z
+SRC_AWS_PROFILE=my-profile MAX_HOUR=12 uv run python -m zarr_creator.create_test_fixture --analysis-time 2025-03-02T00:00:00Z --dest-dir ./data/harmonie/ml
 ```
+
+## 2b. Create an S3 test fixture (frozen GRIB sample)
+
+The operational bucket only retains ~2 weeks of data, so CI and reproducible
+local runs use a frozen trimmed copy in a fixture bucket (default
+`uwcw-sample-grib2zarr-conversion-datasets`, override with `--fixture-bucket`
+/ `$FIXTURE_BUCKET`). The prefix contains the analysis time so the origin is
+self-describing, with a trailing `/ml` mirroring the operational layout:
+
+```text
+s3://<fixture-bucket>/<YYYY-MM-DDTHHMMZ>/ml/<grib files>
+s3://<fixture-bucket>/<YYYY-MM-DDTHHMMZ>/README.md
+s3://<fixture-bucket>/<YYYY-MM-DDTHHMMZ>/manifest.json
+```
+
+Create one (explicit time is recommended for reproducibility):
+
+```bash
+uv run python -m zarr_creator.create_test_fixture --analysis-time 2025-03-02T00:00:00Z --max-hour 2 --dry-run
+uv run python -m zarr_creator.create_test_fixture --analysis-time 2025-03-02T00:00:00Z --max-hour 2
+```
+
+Flags: `--source`, `--fixture-bucket`, `--member-id`, `--max-hour`,
+`--file-types`, `--dry-run`, `--overwrite` (default refuses when the prefix
+exists — fixtures are immutable, snapshot a new analysis time instead).
+
+Source and destination may live on different S3 hosts: use
+`--source-profile` (`SRC_AWS_PROFILE`) and `--dest-profile`
+(`DST_AWS_PROFILE`), each falling back to `AWS_PROFILE`. Endpoint, keys, and
+region resolve from `~/.aws` via the named profile:
+
+```bash
+SOURCE_AWS_PROFILE=oper DEST_AWS_PROFILE=fixtures \
+  uv run python -m zarr_creator.create_test_fixture --analysis-time 2025-03-02T00:00:00Z --max-hour 2
+```
+
+After upload the script verifies the destination and prints the CI env block
+(`SRC_GRIB_ROOT_URI=...`, `MAX_HOUR=...`). `README.md` (origin, retention
+warning, layout, usage) and `manifest.json` (sizes, sha256, git sha, eccodes
+version) travel with the data.
 
 ## 3. Run the pipeline manually in dev
 
 Inside the Dev Container terminal:
 
 ```bash
-SRC_GRIB_TEMP_PATH=/tmp/nwp-forecast-zarr-creator ./build_indexes_and_refs.sh 2025-03-02T00:00:00Z
-uv run python -m zarr_creator --t_analysis 2025-03-02T00:00:00Z --skip-s3-bucket-upload
+SRC_GRIB_TEMP_PATH=/tmp/nwp-forecast-zarr-creator uv run python -m zarr_creator.pipeline.index_refs --t-analysis 2025-03-02T00:00:00Z
+uv run python -m zarr_creator --t_analysis 2025-03-02T00:00:00Z
 ```
 
-Generated refs are written to `./refs` in your repo.
-Generated zarr outputs in this mode are written locally under `/tmp/dini-recent`.
+Or the full one-shot runner (index + convert) / watcher:
+
+```bash
+uv run python -m zarr_creator run --t-analysis 2025-03-02T00:00:00Z
+uv run python -m zarr_creator run --watch
+```
+
+Generated refs are written to `./refs` in your repo (when `REFS_ROOT_PATH`
+points there). Zarr output goes to `DST_ZARR_OUTPUT_PATH`
+(`docker-compose.dev.yml` defaults it to local
+`file:///tmp/nwp-zarr-output/...`, so no S3 writes happen in dev unless you
+override it).
 
 ## 4. Run tests
 
@@ -123,14 +189,28 @@ Inside the Dev Container terminal:
 uv run pytest
 ```
 
-## Notes on script paths
+Unit tests run unconditionally; integration tests are gated:
 
-`run.sh` and `build_indexes_and_refs.sh` now support environment-variable
-overrides while preserving existing server defaults:
+```bash
+# S3 fixture end-to-end (needs the frozen bucket from §2b)
+RUN_S3_E2E=1 SRC_ANON=1 FIXTURE_SRC_URI=s3://<bucket>/<analysis>/ml \
+  FIXTURE_T_ANALYSIS=2025-03-02T00:00:00Z FIXTURE_MAX_HOUR=2 \
+  uv run pytest -m integration
+```
 
-- `SRC_GRIB_ROOT_PATH`
+## Notes on configuration
+
+All runtime options live in `zarr_creator/settings.py`, each mapped 1:1 to an
+environment variable. Precedence: explicit CLI flag > environment variable >
+built-in default — the same flags exist on `run`, `pipeline.index_refs`, and
+`create_test_fixture` (e.g. `--max-hour` overrides `MAX_HOUR`):
+
+- `SRC_GRIB_ROOT_URI`
 - `REFS_ROOT_PATH`
 - `SRC_GRIB_TEMP_PATH`
-- `MEMBER_ID`
+- `DST_ZARR_OUTPUT_PATH`
+- `MEMBER_ID`, `MAX_HOUR`, `SUITE_NAME`
+- `SRC_AWS_PROFILE` / `DST_AWS_PROFILE` (fallback: `AWS_PROFILE`; details
+  from `~/.aws`), `SRC_ANON`
 
-This allows the same scripts to run in both production and local dev.
+This allows the same code to run in both production and local dev.

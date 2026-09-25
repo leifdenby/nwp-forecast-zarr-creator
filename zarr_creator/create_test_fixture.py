@@ -16,6 +16,10 @@ keys, and region resolve from ``~/.aws`` via the named profile.
 Staging is always ``source -> local tmp -> dest`` (no S3-to-S3 across
 hosts). Fixtures are immutable: re-running without ``--overwrite``
 refuses when the destination prefix already exists.
+
+Pass ``--dest-dir`` to only stage files locally (replaces
+``scripts/download_harmonie_data.sh`` for local development) without
+uploading anything.
 """
 
 import argparse
@@ -261,17 +265,33 @@ def create_test_fixture(
     dry_run: bool = False,
     overwrite: bool = False,
     now: datetime.datetime | None = None,
+    dest_dir: str | None = None,
 ) -> str:
-    """Create the fixture; return the destination prefix URI."""
+    """Create the fixture; return the destination prefix URI (or ``dest_dir``)."""
     t_analysis = resolve_analysis_time(
         t_analysis, source_uri, max_hour, member_id, file_types, source_profile, now
     )
+    names = expected_grib_filenames(t_analysis, max_hour, member_id, file_types)
+    src_urls = [storage.join(source_uri, name) for name in names]
+
+    if dest_dir is not None:
+        # Stage-only mode for local development: persist files in dest_dir
+        # (existing files are skipped) and upload nothing.
+        logger.info(
+            f"Staging {t_analysis.isoformat()} from {source_uri} to {dest_dir}"
+        )
+        storage.download_to_temp(src_urls, dest_dir, source_profile)
+        logger.info(
+            "Staged. Point the pipeline at it with:\n"
+            f"  export SRC_GRIB_ROOT_URI={dest_dir}\n"
+            f"  export MAX_HOUR={max_hour}"
+        )
+        return dest_dir
+
     prefix = dest_prefix(fixture_bucket, t_analysis)
     dest_ml = f"{prefix}/ml"
     logger.info(f"Snapshotting {t_analysis.isoformat()} from {source_uri} to {prefix}")
 
-    names = expected_grib_filenames(t_analysis, max_hour, member_id, file_types)
-    src_urls = [storage.join(source_uri, name) for name in names]
     dest_urls = (
         [f"{dest_ml}/{name}" for name in names]
         + [f"{prefix}/README.md", f"{prefix}/manifest.json"]
@@ -347,6 +367,12 @@ def main(argv=None) -> str:
     parser.add_argument("--dest-profile", default=None)
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--overwrite", action="store_true")
+    parser.add_argument(
+        "--dest-dir",
+        default=None,
+        help="Stage-only mode: download files to this local directory "
+        "and skip the fixture upload (replaces download_harmonie_data.sh).",
+    )
     parser.add_argument("--log-level", default="INFO")
     args = parser.parse_args(argv)
 
@@ -384,6 +410,7 @@ def main(argv=None) -> str:
         dest_profile=dest_profile,
         dry_run=args.dry_run,
         overwrite=args.overwrite,
+        dest_dir=args.dest_dir,
     )
 
 

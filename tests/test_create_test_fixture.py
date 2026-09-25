@@ -117,3 +117,34 @@ def test_no_overwrite_guard():
         cf.create_test_fixture(**kwargs)
     # overwrite succeeds
     cf.create_test_fixture(**kwargs, overwrite=True)
+
+
+def test_dest_dir_stage_only(tmp_path):
+    _plant_source("memory://cf-local-src", _utc(2025, 3, 2, 6))
+    dest = str(tmp_path / "ml")
+    out = cf.create_test_fixture(
+        t_analysis=_utc(2025, 3, 2, 6),
+        source_uri="memory://cf-local-src",
+        # dest bucket must remain untouched in stage-only mode
+        fixture_bucket="memory://cf-local-dst",
+        max_hour=1,
+        dest_dir=dest,
+    )
+    assert out == dest
+    assert sorted(os.listdir(dest)) == sorted(
+        f"fc2025030206+{h:03d}CONTROL__dmi_{t}"
+        for h in (0, 1)
+        for t in ("sf", "pl")
+    )
+    # nothing uploaded
+    assert storage.find_missing(
+        [f"memory://cf-local-dst/2025-03-02T0600Z/ml/x"]
+    ) == ["memory://cf-local-dst/2025-03-02T0600Z/ml/x"]
+    # second run skips existing files without error
+    cf.create_test_fixture(
+        t_analysis=_utc(2025, 3, 2, 6),
+        source_uri="memory://cf-local-src",
+        fixture_bucket="memory://cf-local-dst",
+        max_hour=1,
+        dest_dir=dest,
+    )
