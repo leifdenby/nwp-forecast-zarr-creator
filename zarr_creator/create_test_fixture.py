@@ -399,30 +399,87 @@ def create_test_fixture(
 def main(argv=None) -> str:
     """CLI: ``python -m zarr_creator.create_test_fixture [...]``."""
     parser = argparse.ArgumentParser(description="Create a frozen GRIB test fixture")
-    parser.add_argument("--analysis-time", default=None)
-    parser.add_argument("--source", default=None)
-    parser.add_argument("--fixture-bucket", default=None)
-    parser.add_argument("--suite-name", default=None)
-    parser.add_argument("--member-id", default=None)
-    parser.add_argument("--max-hour", type=int, default=None)
-    parser.add_argument("--file-types", default=None)
-    parser.add_argument("--source-profile", default=None)
-    parser.add_argument("--dest-profile", default=None)
+    parser.add_argument(
+        "--analysis-time",
+        default=None,
+        help="Analysis time as an ISO8601 UTC string. Default: the most recent "
+        "complete 3-hourly analysis time, retrying older ones if it is incomplete",
+    )
+    parser.add_argument(
+        "--source",
+        default=None,
+        help="Source GRIB location, local path or s3://bucket/prefix "
+        f"(env: FIXTURE_SOURCE_URI, default: {DEFAULT_SOURCE_URI})",
+    )
+    parser.add_argument(
+        "--fixture-bucket",
+        default=None,
+        help="Bucket the fixture is uploaded to "
+        f"(env: FIXTURE_BUCKET, default: {DEFAULT_FIXTURE_BUCKET})",
+    )
+    parser.add_argument(
+        "--suite-name",
+        default=None,
+        help="Suite name, used in the fixture prefix "
+        f"(env: SUITE_NAME, default: {DEFAULT_SUITE_NAME})",
+    )
+    parser.add_argument(
+        "--member-id",
+        default=None,
+        help="Ensemble member id in the GRIB file names "
+        f"(env: MEMBER_ID, default: {DEFAULT_MEMBER_ID})",
+    )
+    parser.add_argument(
+        "--max-hour",
+        type=int,
+        default=None,
+        help="Last forecast hour to include "
+        f"(env: MAX_HOUR, default: {DEFAULT_MAX_HOUR})",
+    )
+    parser.add_argument(
+        "--file-types",
+        default=None,
+        help="Space-separated GRIB file types to include "
+        f"(env: FILE_TYPES, default: {' '.join(DEFAULT_FILE_TYPES)!r})",
+    )
+    parser.add_argument(
+        "--source-profile",
+        default=None,
+        help="AWS profile for reading the source, resolved from ~/.aws "
+        "(env: SRC_AWS_PROFILE, falls back to AWS_PROFILE)",
+    )
+    parser.add_argument(
+        "--dest-profile",
+        default=None,
+        help="AWS profile for writing the fixture, resolved from ~/.aws "
+        "(env: DST_AWS_PROFILE, falls back to AWS_PROFILE)",
+    )
     parser.add_argument(
         "--src-anon",
         action="store_true",
         default=None,
         help="Unsigned S3 source reads (public buckets).",
     )
-    parser.add_argument("--dry-run", action="store_true")
-    parser.add_argument("--overwrite", action="store_true")
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="List what would be copied without downloading or uploading anything",
+    )
+    parser.add_argument(
+        "--overwrite",
+        action="store_true",
+        help="Replace an existing fixture at the destination prefix "
+        "(default: refuse)",
+    )
     parser.add_argument(
         "--dest-dir",
         default=None,
         help="Stage-only mode: download files to this local directory "
         "and skip the fixture upload (replaces download_harmonie_data.sh).",
     )
-    parser.add_argument("--log-level", default="INFO")
+    parser.add_argument(
+        "--log-level", default="INFO", help="Log level (default: %(default)s)"
+    )
     args = parser.parse_args(argv)
 
     import sys

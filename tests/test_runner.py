@@ -145,3 +145,45 @@ def test_poll_once_propagates_other_errors(tmp_path, monkeypatch):
     monkeypatch.setattr(runner, "process_one", denied)
     with pytest.raises(RuntimeError):
         runner.poll_once(settings, now=now)
+
+
+def _stub_main(monkeypatch, tmp_path):
+    """Stub out the work ``runner.main`` does so only arg handling runs."""
+    calls = {}
+    monkeypatch.setattr(runner, "watch_loop", lambda s, **k: calls.update(watch=True))
+    monkeypatch.setattr(
+        runner, "process_one", lambda t, s, **k: calls.update(one=t) or "done"
+    )
+    monkeypatch.setenv("REFS_ROOT_PATH", str(tmp_path))
+    return calls
+
+
+@pytest.mark.parametrize("t", ["2025-03-02T06:00:00Z", "latest"])
+def test_main_watch_and_t_analysis_are_mutually_exclusive(
+    tmp_path, monkeypatch, capsys, t
+):
+    calls = _stub_main(monkeypatch, tmp_path)
+    with pytest.raises(SystemExit):
+        runner.main(["--watch", "--t-analysis", t])
+    assert "not allowed with argument" in capsys.readouterr().err
+    assert calls == {}
+
+
+def test_main_watch_alone_runs_watcher(tmp_path, monkeypatch):
+    calls = _stub_main(monkeypatch, tmp_path)
+    runner.main(["--watch"])
+    assert calls == {"watch": True}
+
+
+def test_main_one_shot_resolves_t_analysis(tmp_path, monkeypatch):
+    calls = _stub_main(monkeypatch, tmp_path)
+    runner.main(["--t-analysis", "2025-03-02T06:00:00Z"])
+    assert calls["one"] == _utc(2025, 3, 2, 6)
+    runner.main([])  # default: latest
+    assert calls["one"].minute == 0 and calls["one"].hour % 3 == 0
+
+
+def test_main_rejects_naive_t_analysis(tmp_path, monkeypatch):
+    _stub_main(monkeypatch, tmp_path)
+    with pytest.raises(SystemExit):
+        runner.main(["--t-analysis", "2025-03-02T06:00:00"])

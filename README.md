@@ -35,7 +35,10 @@ indexes/refs when missing, and converts to zarr (retrying on failure).
 If not all source GRIB files for the analysis time have arrived yet, it logs
 a warning and tries again on the next poll instead of exiting.
 For a single analysis time (cron / Kubernetes Job), omit `--watch` and
-optionally pass `--t-analysis`. This exits non-zero (e.g. when source files
+optionally pass `--t-analysis`, an ISO8601 time with a timezone or `latest`
+(the default: now minus 2 hours, floored to a 3-hour boundary). `--watch`
+always follows the latest analysis time, so it cannot be combined with
+`--t-analysis`. A one-shot run exits non-zero (e.g. when source files
 are missing) so the scheduler can retry, and conversion failures retry
 forever unless you pass `--max-retries N`:
 

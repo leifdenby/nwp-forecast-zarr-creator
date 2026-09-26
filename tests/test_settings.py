@@ -152,3 +152,21 @@ def test_output_format():
             t_analysis=t,
             dataset_id="x",
         )
+
+
+def test_resolve_t_analysis_latest_uses_now_with_lag():
+    now = datetime.datetime(2025, 3, 2, 5, 30, tzinfo=datetime.timezone.utc)
+    expected = datetime.datetime(2025, 3, 2, 3, tzinfo=datetime.timezone.utc)
+    # 05:30 - 2h = 03:30 -> floored to the 03:00 analysis time
+    assert s.resolve_t_analysis("latest", now=now) == expected
+    assert s.resolve_t_analysis("LATEST", now=now) == expected
+    assert s.resolve_t_analysis(None, now=now) == expected
+
+
+def test_resolve_t_analysis_explicit_and_naive():
+    t = s.resolve_t_analysis("2025-03-02T06:00:00Z")
+    assert t == datetime.datetime(2025, 3, 2, 6, tzinfo=datetime.timezone.utc)
+    with pytest.raises(ValueError):
+        s.resolve_t_analysis("2025-03-02T06:00:00")  # no timezone
+    with pytest.raises(ValueError):
+        s.resolve_t_analysis("not-a-time")

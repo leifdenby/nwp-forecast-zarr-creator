@@ -4,7 +4,6 @@ import argparse
 import datetime
 import sys
 
-import isodate
 import numpy as np
 import xarray as xr
 from loguru import logger
@@ -17,11 +16,28 @@ from .config_ig import DATA_COLLECTION as IG_DATA_COLLECTION
 from .config_ig import PROJECTION_IDENTIFIER as IG_PROJECTION_IDENTIFIER
 from .config_ig import PROJECTION_WKT as IG_PROJECTION_WKT
 from .grib_definitions import set_local_eccodes_definitions_path
+from .pipeline.cli_args import T_ANALYSIS_HELP, t_analysis_arg
 from .read_source import read_level_type_data
-from .settings import dest_profile, format_output_path
+from .settings import (
+    DEFAULT_DST_ZARR_OUTPUT_PATH,
+    DEFAULT_MEMBER_ID,
+    DEFAULT_REFS_ROOT_PATH,
+    LATEST,
+    dest_profile,
+    format_output_path,
+)
 from .write_zarr import write_output_zarrs
 
-DEFAULT_ANALYSIS_TIME = "2025-02-17T01:00:00Z"
+
+class _HelpFormatter(argparse.ArgumentDefaultsHelpFormatter):
+    """Show defaults, except ``None`` (which means "resolved from the env")."""
+
+    def _get_help_string(self, action):
+        if action.default is None:
+            return action.help
+        return super()._get_help_string(action)
+
+
 DEFAULT_FORECAST_DURATION = "PT3H"
 DEFAULT_CHUNKING = dict(time=54, x=300, y=260)
 
@@ -31,14 +47,16 @@ set_local_eccodes_definitions_path()
 def _setup_argparse():
     argparser = argparse.ArgumentParser(
         description="Create Zarr dataset from data-catalog (dmidc)",
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+        formatter_class=_HelpFormatter,
     )
 
     argparser.add_argument(
         "--t_analysis",
-        default=DEFAULT_ANALYSIS_TIME,
-        type=isodate.parse_datetime,
-        help="Analysis time as ISO8601 string",
+        "--t-analysis",
+        dest="t_analysis",
+        type=t_analysis_arg,
+        default=LATEST,
+        help=T_ANALYSIS_HELP,
     )
 
     argparser.add_argument(
@@ -59,10 +77,31 @@ def _setup_argparse():
     # Settings overrides (1:1 with env vars; explicit flag > env > default).
     # Only the options used by conversion are listed here; the full set is
     # available on the `run` subcommand.
-    argparser.add_argument("--refs-root-path", default=None)
-    argparser.add_argument("--member-id", default=None)
-    argparser.add_argument("--dst-zarr-output-path", default=None)
-    argparser.add_argument("--dest-profile", default=None)
+    argparser.add_argument(
+        "--refs-root-path",
+        default=None,
+        help="Directory the index/refs files were written to "
+        f"(env: REFS_ROOT_PATH, default: {DEFAULT_REFS_ROOT_PATH})",
+    )
+    argparser.add_argument(
+        "--member-id",
+        default=None,
+        help="Ensemble member id in the GRIB file names "
+        f"(env: MEMBER_ID, default: {DEFAULT_MEMBER_ID})",
+    )
+    argparser.add_argument(
+        "--dst-zarr-output-path",
+        default=None,
+        help="Zarr output location, local or s3://, as a format string with "
+        "{suite_name}, {member}, {t_analysis} and {dataset_id} placeholders "
+        f"(env: DST_ZARR_OUTPUT_PATH, default: {DEFAULT_DST_ZARR_OUTPUT_PATH})",
+    )
+    argparser.add_argument(
+        "--dest-profile",
+        default=None,
+        help="AWS profile for writing the output, resolved from ~/.aws "
+        "(env: DST_AWS_PROFILE, falls back to AWS_PROFILE)",
+    )
 
     return argparser
 

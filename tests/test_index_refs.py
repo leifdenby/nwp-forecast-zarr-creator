@@ -147,3 +147,21 @@ def test_s3_no_temp_warns_and_attempts(monkeypatch):
         logger.remove(handler)
     assert any("SRC_GRIB_TEMP_PATH" in m for m in messages)
     assert indexed and indexed[0].startswith("s3://bucket/ml/")
+
+
+def test_t_analysis_cli_arg_default_and_errors():
+    import argparse
+
+    from zarr_creator import settings as s
+    from zarr_creator.pipeline.cli_args import t_analysis_arg
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--t-analysis", type=t_analysis_arg, default=s.LATEST)
+    # default is resolved to a real UTC datetime on the 3-hour grid
+    t = parser.parse_args([]).t_analysis
+    assert t.tzinfo is not None and t.hour % 3 == 0 and t.minute == 0
+    assert parser.parse_args(["--t-analysis", "2025-03-02T06:00:00Z"]).t_analysis == (
+        s.resolve_t_analysis("2025-03-02T06:00:00Z")
+    )
+    with pytest.raises(SystemExit):
+        parser.parse_args(["--t-analysis", "2025-03-02T06:00:00"])

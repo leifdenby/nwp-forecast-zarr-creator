@@ -14,40 +14,28 @@ import datetime
 import os
 import time
 
-import isodate
 from loguru import logger
 
 from .. import storage
-from ..settings import Settings, describe_source_auth, refs_dir_for, require_utc
-from .cli_args import add_settings_arguments, settings_from_args
+from ..settings import (
+    LATEST,
+    Settings,
+    compute_analysis_time,
+    describe_source_auth,
+    refs_dir_for,
+    require_utc,
+    resolve_t_analysis,
+)
+from .cli_args import (
+    T_ANALYSIS_HELP,
+    add_settings_arguments,
+    settings_from_args,
+    t_analysis_arg,
+)
 from .index_refs import build_indexes_and_refs
 
-ANALYSIS_INTERVAL_SECONDS = 3 * 3600
-DEFAULT_LAG_HOURS = 2
 DEFAULT_POLL_INTERVAL = 300
 DEFAULT_ALREADY_DONE_SLEEP = 1200
-
-
-def _parse_t_analysis(value: str | None) -> datetime.datetime | None:
-    if value is None:
-        return None
-    t = isodate.parse_datetime(value)
-    return require_utc(t)
-
-
-def compute_analysis_time(
-    now: datetime.datetime, lag_hours: float = DEFAULT_LAG_HOURS
-) -> datetime.datetime:
-    """Nearest past 3-hour interval, minus ``lag_hours`` (ports ``run.sh``).
-
-    ``run.sh`` does ``now - 7200s`` then floors to a 10800s grid.
-    """
-    if now.tzinfo is None:
-        now = now.replace(tzinfo=datetime.timezone.utc)
-    adjusted = now - datetime.timedelta(hours=lag_hours)
-    epoch = int(adjusted.timestamp())
-    rounded = epoch // ANALYSIS_INTERVAL_SECONDS * ANALYSIS_INTERVAL_SECONDS
-    return datetime.datetime.fromtimestamp(rounded, tz=datetime.timezone.utc)
 
 
 def refs_exist(t_analysis: datetime.datetime, settings: Settings) -> bool:
@@ -150,15 +138,56 @@ def watch_loop(
 def main(argv=None) -> None:
     """CLI: ``python -m zarr_creator.pipeline.runner [--t-analysis X | --watch]``."""
     parser = argparse.ArgumentParser(description="Run the NWP zarr conversion pipeline")
-    parser.add_argument("--t-analysis", default=None)
-    parser.add_argument("--watch", action="store_true")
-    parser.add_argument("--poll-interval", type=float, default=DEFAULT_POLL_INTERVAL)
-    parser.add_argument(
-        "--already-done-sleep", type=float, default=DEFAULT_ALREADY_DONE_SLEEP
+    # --watch always follows the latest analysis time, so a fixed one makes no
+    # sense with it. ``--t-analysis`` defaults to None (= latest) rather than
+    # the "latest" string so argparse reliably detects an explicit value.
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument(
+        "--t-analysis",
+        type=t_analysis_arg,
+        default=None,
+        help="Process this analysis time once and exit. "
+        + T_ANALYSIS_HELP
+        + f" (default: {LATEST})",
     )
-    parser.add_argument("--max-retries", type=int, default=None)
-    parser.add_argument("--retry-interval", type=float, default=60)
-    parser.add_argument("--log-level", default="INFO")
+    mode.add_argument(
+        "--watch",
+        action="store_true",
+        help="Keep running: poll for the latest analysis time, build indexes/refs "
+        "and convert to zarr when it is available",
+    )
+    parser.add_argument(
+        "--poll-interval",
+        type=float,
+        default=DEFAULT_POLL_INTERVAL,
+        help="With --watch, seconds to sleep between polls " "(default: %(default)s)",
+    )
+    parser.add_argument(
+        "--already-done-sleep",
+        type=float,
+        default=DEFAULT_ALREADY_DONE_SLEEP,
+        help="With --watch, seconds to sleep once the current analysis time has "
+        "already been processed (default: %(default)s)",
+    )
+    parser.add_argument(
+        "--max-retries",
+        type=int,
+        default=None,
+        help="Give up and exit non-zero after this many failed zarr conversion "
+        "retries (default: retry forever)",
+    )
+    parser.add_argument(
+        "--retry-interval",
+        type=float,
+        default=60,
+        help="Seconds to wait between zarr conversion retries "
+        "(default: %(default)s)",
+    )
+    parser.add_argument(
+        "--log-level",
+        default="INFO",
+        help="Log level (default: %(default)s)",
+    )
     add_settings_arguments(parser)
     args = parser.parse_args(argv)
 
@@ -188,11 +217,8 @@ def main(argv=None) -> None:
         )
         return
 
-    t_analysis = _parse_t_analysis(args.t_analysis) or compute_analysis_time(
-        datetime.datetime.now(datetime.timezone.utc)
-    )
     process_one(
-        t_analysis,
+        args.t_analysis or resolve_t_analysis(LATEST),
         settings,
         max_retries=args.max_retries,
         retry_interval=args.retry_interval,

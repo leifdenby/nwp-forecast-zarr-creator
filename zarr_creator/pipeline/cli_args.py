@@ -6,21 +6,104 @@ explicit flag > env > built-in default (see ``zarr_creator.settings``).
 
 import argparse
 
-from ..settings import Settings, load_settings
+from ..settings import (
+    DEFAULT_DST_ZARR_OUTPUT_PATH,
+    DEFAULT_MAX_HOUR,
+    DEFAULT_MEMBER_ID,
+    DEFAULT_REFS_ROOT_PATH,
+    DEFAULT_SRC_GRIB_ROOT_URI,
+    DEFAULT_SUITE_NAME,
+    LATEST,
+    Settings,
+    load_settings,
+    resolve_t_analysis,
+)
+
+T_ANALYSIS_HELP = (
+    "Analysis time as an ISO8601 string with a timezone, e.g. "
+    f"2025-03-02T00:00:00Z, or '{LATEST}' for the most recent 3-hourly "
+    "analysis time (now minus 2 hours, floored to a 3-hour boundary)"
+)
+
+
+def t_analysis_arg(value: str):
+    """``argparse`` type for ``--t-analysis``: ISO8601 string or ``latest``."""
+    try:
+        return resolve_t_analysis(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(
+            f"{value!r} is not '{LATEST}' or an ISO8601 time with a timezone "
+            f"(e.g. 2025-03-02T00:00:00Z): {exc}"
+        ) from exc
 
 
 def add_settings_arguments(parser: argparse.ArgumentParser) -> None:
     """Add settings-override flags mirroring every env var."""
-    parser.add_argument("--src-grib-root-uri", default=None)
-    parser.add_argument("--refs-root-path", default=None)
-    parser.add_argument("--member-id", default=None)
-    parser.add_argument("--max-hour", type=int, default=None)
-    parser.add_argument("--suite-name", default=None)
-    parser.add_argument("--src-grib-temp-path", default=None)
-    parser.add_argument("--dst-zarr-output-path", default=None)
-    parser.add_argument("--source-profile", default=None)
-    parser.add_argument("--dest-profile", default=None)
-    parser.add_argument("--src-anon", action="store_true", default=False)
+    parser.add_argument(
+        "--src-grib-root-uri",
+        default=None,
+        help="Where the source GRIB files live: a local path or s3://bucket/prefix "
+        f"(env: SRC_GRIB_ROOT_URI, default: {DEFAULT_SRC_GRIB_ROOT_URI})",
+    )
+    parser.add_argument(
+        "--refs-root-path",
+        default=None,
+        help="Directory the index/refs files are written to "
+        f"(env: REFS_ROOT_PATH, default: {DEFAULT_REFS_ROOT_PATH})",
+    )
+    parser.add_argument(
+        "--member-id",
+        default=None,
+        help=f"Ensemble member id in the GRIB file names (env: MEMBER_ID, "
+        f"default: {DEFAULT_MEMBER_ID})",
+    )
+    parser.add_argument(
+        "--max-hour",
+        type=int,
+        default=None,
+        help="Last forecast hour to include, so hours 0..MAX_HOUR are expected "
+        f"(env: MAX_HOUR, default: {DEFAULT_MAX_HOUR})",
+    )
+    parser.add_argument(
+        "--suite-name",
+        default=None,
+        help="Suite to process, e.g. dini or ig "
+        f"(env: SUITE_NAME, default: {DEFAULT_SUITE_NAME})",
+    )
+    parser.add_argument(
+        "--src-grib-temp-path",
+        default=None,
+        help="Local directory to stage GRIB files in before indexing. Pass an "
+        "empty string to index in place with no copy "
+        "(env: SRC_GRIB_TEMP_PATH, default: unset = index in place)",
+    )
+    parser.add_argument(
+        "--dst-zarr-output-path",
+        default=None,
+        help="Zarr output location, local or s3://, as a format string with "
+        "{suite_name}, {member}, {t_analysis} and {dataset_id} placeholders "
+        "(must contain {dataset_id}) "
+        f"(env: DST_ZARR_OUTPUT_PATH, default: {DEFAULT_DST_ZARR_OUTPUT_PATH})",
+    )
+    parser.add_argument(
+        "--source-profile",
+        default=None,
+        help="AWS profile for reading the source, resolved from ~/.aws "
+        "(env: SRC_AWS_PROFILE, falls back to AWS_PROFILE)",
+    )
+    parser.add_argument(
+        "--dest-profile",
+        default=None,
+        help="AWS profile for writing the output, resolved from ~/.aws "
+        "(env: DST_AWS_PROFILE, falls back to AWS_PROFILE)",
+    )
+    parser.add_argument(
+        "--src-anon",
+        action="store_true",
+        default=False,
+        help="Read the source from S3 unsigned, for public buckets "
+        "(env: SRC_ANON=1). Never used for writes",
+    )
 
 
 def settings_from_args(

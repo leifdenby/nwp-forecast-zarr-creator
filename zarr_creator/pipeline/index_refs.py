@@ -17,13 +17,13 @@ import argparse
 import datetime
 import os
 
-import isodate
 from loguru import logger
 
 from .. import storage
 from ..grib_definitions import set_local_eccodes_definitions_path
 from ..settings import (
     FILE_TYPES,
+    LATEST,
     Settings,
     describe_source_auth,
     expected_grib_filenames,
@@ -31,7 +31,12 @@ from ..settings import (
     require_utc,
     source_profile,
 )
-from .cli_args import add_settings_arguments, settings_from_args
+from .cli_args import (
+    T_ANALYSIS_HELP,
+    add_settings_arguments,
+    settings_from_args,
+    t_analysis_arg,
+)
 
 
 def _is_s3_uri(uri: str) -> bool:
@@ -147,7 +152,12 @@ def build_indexes_and_refs(
 def main(argv=None) -> str:
     """CLI: ``python -m zarr_creator.pipeline.index_refs --t-analysis ...``."""
     parser = argparse.ArgumentParser(description="Build GRIB indexes and refs")
-    parser.add_argument("--t-analysis", type=isodate.parse_datetime, required=True)
+    parser.add_argument(
+        "--t-analysis",
+        type=t_analysis_arg,
+        default=LATEST,
+        help=T_ANALYSIS_HELP + " (default: %(default)s)",
+    )
     add_settings_arguments(parser)
     args = parser.parse_args(argv)
     settings = settings_from_args(args)

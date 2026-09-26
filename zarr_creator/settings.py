@@ -17,6 +17,8 @@ import os
 import warnings
 from dataclasses import dataclass, field
 
+import isodate
+
 # Built-in defaults (mirroring ``script_defaults.sh``).
 DEFAULT_SRC_GRIB_ROOT_URI = "/mnt/harmonie-data-from-pds/ml"
 DEFAULT_REFS_ROOT_PATH = "/home/ec2-user/nwp-forecast-zarr-creator/refs"
@@ -134,6 +136,44 @@ def require_utc(t_analysis: datetime.datetime) -> datetime.datetime:
             f"analysis_time must be timezone-aware (UTC), got: {t_analysis!r}"
         )
     return t_analysis.astimezone(datetime.timezone.utc)
+
+
+ANALYSIS_INTERVAL_SECONDS = 3 * 3600
+DEFAULT_LAG_HOURS = 2
+# Sentinel for "the most recent analysis time that should be available".
+LATEST = "latest"
+
+
+def compute_analysis_time(
+    now: datetime.datetime, lag_hours: float = DEFAULT_LAG_HOURS
+) -> datetime.datetime:
+    """Most recent 3-hourly analysis time, allowing ``lag_hours`` for delivery.
+
+    Subtracts the lag from ``now`` and floors to the 3-hour grid, e.g. at
+    05:00 UTC with a 2h lag the result is 03:00 UTC.
+    """
+    if now.tzinfo is None:
+        now = now.replace(tzinfo=datetime.timezone.utc)
+    adjusted = now - datetime.timedelta(hours=lag_hours)
+    epoch = int(adjusted.timestamp())
+    rounded = epoch // ANALYSIS_INTERVAL_SECONDS * ANALYSIS_INTERVAL_SECONDS
+    return datetime.datetime.fromtimestamp(rounded, tz=datetime.timezone.utc)
+
+
+def resolve_t_analysis(
+    value: str | None, now: datetime.datetime | None = None
+) -> datetime.datetime:
+    """Turn a ``--t-analysis`` value into a UTC datetime.
+
+    ``None`` or ``"latest"`` means the most recent analysis time (see
+    :func:`compute_analysis_time`); anything else is an ISO8601 string with a
+    timezone, e.g. ``2025-03-02T00:00:00Z``.
+    """
+    if value is None or value.strip().lower() == LATEST:
+        return compute_analysis_time(
+            now or datetime.datetime.now(datetime.timezone.utc)
+        )
+    return require_utc(isodate.parse_datetime(value))
 
 
 def analysis_time_str(t_analysis: datetime.datetime) -> str:
