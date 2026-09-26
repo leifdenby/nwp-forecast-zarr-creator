@@ -40,6 +40,9 @@ jobs:
         with:
           path: .grib-cache
           key: grib-fixture-v1-${{ env.FIXTURE_SRC_URI }}
+      - name: Set up Docker Buildx
+        # The default "docker" driver cannot export the GHA layer cache.
+        uses: docker/setup-buildx-action@v4
       - name: Build image
         uses: docker/build-push-action@v7
         with:
