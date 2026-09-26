@@ -120,7 +120,12 @@ def poll_once(
             f"Sleeping for {already_done_sleep}s..."
         )
         return already_done_sleep
-    process_one(t_analysis, settings, **process_kwargs)
+    try:
+        process_one(t_analysis, settings, **process_kwargs)
+    except FileNotFoundError as exc:
+        # GRIBs arrive hour by hour, so an incomplete analysis time is the
+        # normal state until the last file lands (run.sh just retried).
+        logger.warning(f"{exc}. Source not complete yet, retrying later.")
     return poll_interval
 
 

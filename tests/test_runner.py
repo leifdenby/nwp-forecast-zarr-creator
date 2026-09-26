@@ -122,3 +122,26 @@ def test_poll_once_processes_and_sleeps_poll(tmp_path, monkeypatch):
     )
     assert runner.poll_once(settings, now=now) == runner.DEFAULT_POLL_INTERVAL
     assert seen == [_utc(2025, 3, 2, 6)]
+
+
+def test_poll_once_survives_incomplete_source(tmp_path, monkeypatch):
+    settings = _settings(refs_root_path=str(tmp_path / "refs"))
+    now = _utc(2025, 3, 2, 8, 30)
+
+    def missing(*a, **k):
+        raise FileNotFoundError("1 expected GRIB file(s) missing")
+
+    monkeypatch.setattr(runner, "process_one", missing)
+    assert runner.poll_once(settings, now=now) == runner.DEFAULT_POLL_INTERVAL
+
+
+def test_poll_once_propagates_other_errors(tmp_path, monkeypatch):
+    settings = _settings(refs_root_path=str(tmp_path / "refs"))
+    now = _utc(2025, 3, 2, 8, 30)
+
+    def denied(*a, **k):
+        raise RuntimeError("403")
+
+    monkeypatch.setattr(runner, "process_one", denied)
+    with pytest.raises(RuntimeError):
+        runner.poll_once(settings, now=now)
