@@ -1,11 +1,12 @@
-version: "3.9"
-
 services:
   app:
     platform: ${DEV_CONTAINER_PLATFORM:-linux/amd64}
     build:
       context: .
       dockerfile: Dockerfile
+    # The image ENTRYPOINT runs the app; clear it so `command` isn't appended
+    # to it as arguments (needed outside the VS Code dev container).
+    entrypoint: []
     command: sleep infinity
     working_dir: /app
     volumes:
