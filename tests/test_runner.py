@@ -44,18 +44,40 @@ def test_compute_analysis_time_boundaries():
     )
 
 
-def test_refs_exist(tmp_path):
-    settings = _settings(refs_root_path=str(tmp_path))
-    t = _utc(2025, 3, 2, 6)
-    assert not runner.refs_exist(t, settings)
-    os.makedirs(tmp_path / "CONTROL__dmi" / "2025-03-02T0600Z.jsons")
-    assert runner.refs_exist(t, settings)
+def _refs_dir(tmp_path):
+    return tmp_path / "CONTROL__dmi" / "2025-03-02T0600Z.jsons"
 
 
-def test_process_one_skips_when_refs_exist(tmp_path, monkeypatch):
+def _mark_done(tmp_path):
+    refs = _refs_dir(tmp_path)
+    os.makedirs(refs, exist_ok=True)
+    (refs / runner.REFS_DONE_MARKER).touch()
+
+
+def test_refs_done_needs_marker_not_just_directory(tmp_path):
     settings = _settings(refs_root_path=str(tmp_path))
     t = _utc(2025, 3, 2, 6)
-    os.makedirs(tmp_path / "CONTROL__dmi" / "2025-03-02T0600Z.jsons")
+    assert not runner.refs_done(t, settings)
+    # a directory (e.g. from an interrupted run) does not count as done
+    os.makedirs(_refs_dir(tmp_path))
+    (_refs_dir(tmp_path) / "heightAboveGround.json").write_text("{}")
+    assert not runner.refs_done(t, settings)
+    _mark_done(tmp_path)
+    assert runner.refs_done(t, settings)
+
+
+def test_mark_refs_done_frees_refs_and_keeps_marker(tmp_path):
+    settings = _settings(refs_root_path=str(tmp_path))
+    os.makedirs(_refs_dir(tmp_path))
+    (_refs_dir(tmp_path) / "heightAboveGround.json").write_text("{}")
+    runner.mark_refs_done(_utc(2025, 3, 2, 6), settings)
+    assert os.listdir(_refs_dir(tmp_path)) == [runner.REFS_DONE_MARKER]
+
+
+def test_process_one_skips_when_done(tmp_path, monkeypatch):
+    settings = _settings(refs_root_path=str(tmp_path))
+    t = _utc(2025, 3, 2, 6)
+    _mark_done(tmp_path)
     called = []
     monkeypatch.setattr(runner, "build_indexes_and_refs", lambda *a: called.append(a))
     assert runner.process_one(t, settings) == "skipped"
@@ -75,6 +97,91 @@ def test_process_one_success_cleans_temp(tmp_path, monkeypatch):
     assert runner.process_one(t, settings) == "done"
     assert len(conversions) == 1
     assert not stage.exists()
+
+
+def test_process_one_rebuilds_when_refs_dir_is_only_partial(tmp_path, monkeypatch):
+    settings = _settings(refs_root_path=str(tmp_path))
+    t = _utc(2025, 3, 2, 6)
+    os.makedirs(_refs_dir(tmp_path))  # interrupted earlier run: dir, no marker
+    built = []
+    monkeypatch.setattr(runner, "build_indexes_and_refs", lambda *a: built.append(a))
+    monkeypatch.setattr(runner, "_run_conversion", lambda *a: None)
+    assert runner.process_one(t, settings) == "done"
+    assert len(built) == 1
+
+
+def test_process_one_frees_refs_after_success(tmp_path, monkeypatch):
+    settings = _settings(refs_root_path=str(tmp_path))
+    t = _utc(2025, 3, 2, 6)
+
+    def build(*a):
+        os.makedirs(_refs_dir(tmp_path), exist_ok=True)
+        (_refs_dir(tmp_path) / "heightAboveGround.json").write_text("{}")
+
+    monkeypatch.setattr(runner, "build_indexes_and_refs", build)
+    monkeypatch.setattr(runner, "_run_conversion", lambda *a: None)
+    assert runner.process_one(t, settings) == "done"
+    assert os.listdir(_refs_dir(tmp_path)) == [runner.REFS_DONE_MARKER]
+    # the next poll sees it as processed and does no work
+    monkeypatch.setattr(runner, "build_indexes_and_refs", lambda *a: 1 / 0)
+    assert runner.process_one(t, settings) == "skipped"
+
+
+def test_process_one_no_cleanup_keeps_refs_and_staged_files(tmp_path, monkeypatch):
+    stage = tmp_path / "stage"
+    stage.mkdir()
+    (stage / "fc2025030206+000CONTROL__dmi_sf").write_text("grib")
+    settings = _settings(
+        refs_root_path=str(tmp_path / "refs"), src_grib_temp_path=str(stage)
+    )
+    t = _utc(2025, 3, 2, 6)
+    refs = tmp_path / "refs" / "CONTROL__dmi" / "2025-03-02T0600Z.jsons"
+
+    def build(*a):
+        os.makedirs(refs, exist_ok=True)
+        (refs / "heightAboveGround.json").write_text("{}")
+
+    monkeypatch.setattr(runner, "build_indexes_and_refs", build)
+    monkeypatch.setattr(runner, "_run_conversion", lambda *a: None)
+    assert runner.process_one(t, settings, cleanup=False) == "done"
+    # everything is kept, but the time still counts as processed
+    assert sorted(os.listdir(refs)) == [
+        runner.REFS_DONE_MARKER,
+        "heightAboveGround.json",
+    ]
+    assert (stage / "fc2025030206+000CONTROL__dmi_sf").exists()
+    assert runner.refs_done(t, settings)
+
+
+def test_main_passes_no_cleanup(tmp_path, monkeypatch):
+    seen = {}
+    monkeypatch.setattr(
+        runner, "process_one", lambda t, s, **k: seen.update(k) or "done"
+    )
+    monkeypatch.setenv("REFS_ROOT_PATH", str(tmp_path))
+    runner.main([])
+    assert seen["cleanup"] is True
+    runner.main(["--no-cleanup"])
+    assert seen["cleanup"] is False
+
+
+def test_process_one_keeps_refs_when_conversion_fails(tmp_path, monkeypatch):
+    settings = _settings(refs_root_path=str(tmp_path))
+    t = _utc(2025, 3, 2, 6)
+
+    def build(*a):
+        os.makedirs(_refs_dir(tmp_path), exist_ok=True)
+        (_refs_dir(tmp_path) / "heightAboveGround.json").write_text("{}")
+
+    monkeypatch.setattr(runner, "build_indexes_and_refs", build)
+    monkeypatch.setattr(
+        runner, "_run_conversion", lambda *a: (_ for _ in ()).throw(RuntimeError("x"))
+    )
+    monkeypatch.setattr(runner.time, "sleep", lambda s: None)
+    with pytest.raises(RuntimeError):
+        runner.process_one(t, settings, max_retries=0, retry_interval=0)
+    assert os.listdir(_refs_dir(tmp_path)) == ["heightAboveGround.json"]
+    assert not runner.refs_done(t, settings)
 
 
 def test_process_one_retries_then_succeeds(tmp_path, monkeypatch):
@@ -106,10 +213,10 @@ def test_process_one_max_retries_exceeded(tmp_path, monkeypatch):
         runner.process_one(t, settings, max_retries=1, retry_interval=0)
 
 
-def test_poll_once_existing_refs_sleeps_long(tmp_path):
+def test_poll_once_done_sleeps_long(tmp_path):
     settings = _settings(refs_root_path=str(tmp_path))
     now = _utc(2025, 3, 2, 8, 30)  # -> analysis 06:00
-    os.makedirs(tmp_path / "CONTROL__dmi" / "2025-03-02T0600Z.jsons")
+    _mark_done(tmp_path)
     assert runner.poll_once(settings, now=now) == runner.DEFAULT_ALREADY_DONE_SLEEP
 
 

@@ -12,6 +12,7 @@ Modes (see ``main``):
 import argparse
 import datetime
 import os
+import shutil
 import time
 
 from loguru import logger
@@ -38,9 +39,37 @@ DEFAULT_POLL_INTERVAL = 300
 DEFAULT_ALREADY_DONE_SLEEP = 1200
 
 
-def refs_exist(t_analysis: datetime.datetime, settings: Settings) -> bool:
-    """Check whether refs already exist for an analysis time."""
-    return os.path.isdir(refs_dir_for(t_analysis, settings))
+# Left in an analysis time's refs directory once it has been converted. The
+# refs JSONs are only needed for the conversion, so they are deleted to save
+# disk space; the marker is what tells the watcher the time is already done.
+REFS_DONE_MARKER = ".done"
+
+
+def refs_done(t_analysis: datetime.datetime, settings: Settings) -> bool:
+    """Whether an analysis time has been fully processed.
+
+    A refs directory alone does not count: it is created before the refs are
+    built, so it also exists after an interrupted or failed run.
+    """
+    return os.path.isfile(
+        os.path.join(refs_dir_for(t_analysis, settings), REFS_DONE_MARKER)
+    )
+
+
+def mark_refs_done(
+    t_analysis: datetime.datetime, settings: Settings, keep_refs: bool = False
+) -> None:
+    """Record an analysis time as processed.
+
+    By default the refs are freed, keeping only the marker; ``keep_refs=True``
+    leaves them in place (e.g. to inspect them during development).
+    """
+    refs_dir = refs_dir_for(t_analysis, settings)
+    if not keep_refs:
+        shutil.rmtree(refs_dir, ignore_errors=True)
+    os.makedirs(refs_dir, exist_ok=True)
+    with open(os.path.join(refs_dir, REFS_DONE_MARKER), "w"):
+        pass
 
 
 def _run_conversion(t_analysis: datetime.datetime, settings: Settings) -> None:
@@ -56,14 +85,17 @@ def process_one(
     settings: Settings,
     max_retries: int | None = None,
     retry_interval: float = 60,
+    cleanup: bool = True,
 ) -> str:
     """Process one analysis time; return ``"skipped"`` or ``"done"``.
 
-    ``max_retries=None`` retries forever (like ``run.sh``).
+    ``max_retries=None`` retries forever (like ``run.sh``). With
+    ``cleanup=False`` the refs and staged GRIB files are kept after a
+    successful conversion (the done marker is still written).
     """
     t_analysis = require_utc(t_analysis)
-    if refs_exist(t_analysis, settings):
-        logger.info(f"Refs already exist for analysis time {t_analysis.isoformat()}")
+    if refs_done(t_analysis, settings):
+        logger.info(f"Analysis time {t_analysis.isoformat()} is already processed")
         return "skipped"
 
     logger.info(f"Creating indexes/refs for analysis time {t_analysis.isoformat()}")
@@ -85,7 +117,10 @@ def process_one(
     logger.info(
         f"Zarr conversion successful for analysis time {t_analysis.isoformat()}"
     )
-    if settings.src_grib_temp_path and os.path.isdir(settings.src_grib_temp_path):
+    mark_refs_done(t_analysis, settings, keep_refs=not cleanup)
+    if not cleanup:
+        logger.info("Cleanup disabled: keeping refs and staged GRIB files")
+    elif settings.src_grib_temp_path and os.path.isdir(settings.src_grib_temp_path):
         storage.cleanup_temp(settings.src_grib_temp_path)
     return "done"
 
@@ -101,9 +136,9 @@ def poll_once(
     t_analysis = compute_analysis_time(
         now or datetime.datetime.now(datetime.timezone.utc)
     )
-    if refs_exist(t_analysis, settings):
+    if refs_done(t_analysis, settings):
         logger.info(
-            f"Refs already exist for analysis time {t_analysis.isoformat()} "
+            f"Analysis time {t_analysis.isoformat()} is already processed "
             f"({refs_dir_for(t_analysis, settings)}). "
             f"Sleeping for {already_done_sleep}s..."
         )
@@ -184,6 +219,12 @@ def main(argv=None) -> None:
         "(default: %(default)s)",
     )
     parser.add_argument(
+        "--no-cleanup",
+        action="store_true",
+        help="Keep the refs and staged GRIB files after a successful conversion "
+        "instead of deleting them (useful during development)",
+    )
+    parser.add_argument(
         "--log-level",
         default="INFO",
         help="Log level (default: %(default)s)",
@@ -214,6 +255,7 @@ def main(argv=None) -> None:
             already_done_sleep=args.already_done_sleep,
             max_retries=args.max_retries,
             retry_interval=args.retry_interval,
+            cleanup=not args.no_cleanup,
         )
         return
 
@@ -222,6 +264,7 @@ def main(argv=None) -> None:
         settings,
         max_retries=args.max_retries,
         retry_interval=args.retry_interval,
+        cleanup=not args.no_cleanup,
     )
 
 

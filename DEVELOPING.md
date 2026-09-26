@@ -201,7 +201,9 @@ uv run python -m zarr_creator run --watch
 ```
 
 Generated refs are written to `./refs` in your repo (when `REFS_ROOT_PATH`
-points there). Zarr output goes to `DST_ZARR_OUTPUT_PATH`
+points there). `run` deletes an analysis time's refs after a successful
+conversion, leaving a `.done` marker; to keep them (and the staged GRIB
+files) pass `--no-cleanup`, or run `pipeline.index_refs` on its own. Zarr output goes to `DST_ZARR_OUTPUT_PATH`
 (`docker-compose.dev.yml` defaults it to local
 `file:///tmp/nwp-zarr-output/...`, so no S3 writes happen in dev unless you
 override it).

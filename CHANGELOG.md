@@ -24,6 +24,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `docker run image --t-analysis <time>` processes one analysis time and exits.
 - In `--watch` mode an incomplete set of source GRIBs is retried on the next
   poll instead of stopping the process.
+- The refs of an analysis time are deleted after a successful conversion,
+  leaving a `.done` marker in its refs directory, so `REFS_ROOT_PATH` no longer
+  grows without bound. An analysis time now counts as processed only when the
+  marker exists (a refs directory left by an interrupted run is rebuilt).
+  Existing refs directories have no marker, so the current analysis time is
+  rebuilt once after upgrading; delete older refs directories by hand.
+  `run --no-cleanup` keeps the refs and staged GRIB files (for development).
 - New `python -m zarr_creator.create_test_fixture` for frozen S3 test fixtures
   (`--dest-dir` stages locally for development).
 
