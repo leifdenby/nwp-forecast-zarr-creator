@@ -55,12 +55,18 @@ indexing happens in place from `SRC_GRIB_ROOT_URI` rather than staging to a
 temp path inside the container. This is to avoid unnecessary copying of
 large GRIB files during development.
 
-To open a shell inside the already-running dev container from your host
-terminal:
+To use the dev container without VS Code, start it and open a shell from your
+host terminal:
 
 ```bash
+docker compose -f docker-compose.dev.yml up -d --build
 docker compose -f docker-compose.dev.yml exec app bash
+uv sync --dev   # first time only (VS Code does this for you)
 ```
+
+**note**: the repo is bind-mounted at `/app`, so the container's `uv sync`
+replaces your host `.venv` with a Linux one (and vice versa). Use one or the
+other for a given checkout, or re-run `uv sync` after switching.
 
 ## 2. Prepare input data locally
 
@@ -217,6 +223,11 @@ Unit tests run unconditionally; integration tests are gated:
 FIXTURE_SRC_URI=s3://<bucket>/<suite>/<analysis>/ml SRC_ANON=1 \
   uv run pytest -m integration
 ```
+
+This needs eccodes and the DMI definitions, so run it in the Dev Container (or
+the Docker image). CI runs it in the image against the fixture pinned as
+`FIXTURE_SRC_URI` in `.github/workflows/ci-tests.yml`; update that value if
+the fixture is regenerated at a new analysis time.
 
 ## Notes on configuration
 

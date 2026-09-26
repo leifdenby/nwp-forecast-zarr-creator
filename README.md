@@ -32,8 +32,12 @@ uv run python -m zarr_creator run --watch
 
 This polls for the latest 3-hourly analysis time every 5 minutes, builds
 indexes/refs when missing, and converts to zarr (retrying on failure).
+If not all source GRIB files for the analysis time have arrived yet, it logs
+a warning and tries again on the next poll instead of exiting.
 For a single analysis time (cron / Kubernetes Job), omit `--watch` and
-optionally pass `--t-analysis`:
+optionally pass `--t-analysis`. This exits non-zero (e.g. when source files
+are missing) so the scheduler can retry, and conversion failures retry
+forever unless you pass `--max-retries N`:
 
 ```bash
 uv run python -m zarr_creator run --t-analysis 2025-02-27T15:00:00Z
@@ -221,10 +225,18 @@ Build image (using most recent git tag to set tag for image):
 docker build -t nwp-forecast-zarr-creator:$(git describe --tags --abbrev=0) .
 ```
 
-Run container (the image entrypoint runs the pipeline watcher):
+Run container (by default the image runs the pipeline watcher, i.e. `run --watch`):
 
 ```bash
 docker run --rm -it -v /mnt/:/mnt/ -v /tmp/:/tmp/ --name nwp-forecast-zarr-creator nwp-forecast-zarr-creator:$(git describe --tags --abbrev=0)
+```
+
+Arguments after the image name replace the default `--watch`, so to process a
+single analysis time and exit (cron / Kubernetes Job) pass `--t-analysis`
+(omit it to use the latest complete analysis time):
+
+```bash
+docker run --rm -it -v /mnt/:/mnt/ -v /tmp/:/tmp/ nwp-forecast-zarr-creator:$(git describe --tags --abbrev=0) --t-analysis 2025-02-27T15:00:00Z
 ```
 
 Configuration is purely via environment variables (see Runtime Defaults

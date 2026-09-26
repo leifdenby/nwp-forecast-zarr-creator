@@ -19,6 +19,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`SRC_AWS_PROFILE`/`DST_AWS_PROFILE` → `AWS_PROFILE`, details from `~/.aws`).
 - Single configurable zarr destination `DST_ZARR_OUTPUT_PATH` (full
   format-string path, local or S3); `--skip-s3-bucket-upload` is removed.
+- The container image entrypoint is `python -m zarr_creator run` with default
+  argument `--watch`: `docker run image` watches as before, while
+  `docker run image --t-analysis <time>` processes one analysis time and exits.
+- In `--watch` mode an incomplete set of source GRIBs is retried on the next
+  poll instead of stopping the process.
 - New `python -m zarr_creator.create_test_fixture` for frozen S3 test fixtures
   (`--dest-dir` stages locally for development).
 

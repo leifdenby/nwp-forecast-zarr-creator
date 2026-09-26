@@ -19,4 +19,8 @@ RUN uv sync
 # Check that version is set correctly from git (i.e. not the default "0.0.0")
 RUN uv run python -c "import zarr_creator; assert zarr_creator.__version__ != '0.0.0'"
 
-ENTRYPOINT ["uv", "run", "python", "-m", "zarr_creator", "run", "--watch"]
+# --watch is the default argument (not part of the entrypoint) so that passing
+# arguments, e.g. `--t-analysis 2025-02-27T15:00:00Z`, runs a single analysis
+# time and exits instead of watching.
+ENTRYPOINT ["uv", "run", "python", "-m", "zarr_creator", "run"]
+CMD ["--watch"]
