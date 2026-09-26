@@ -23,7 +23,9 @@ def add_settings_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--src-anon", action="store_true", default=False)
 
 
-def settings_from_args(args: argparse.Namespace, base: Settings | None = None) -> Settings:
+def settings_from_args(
+    args: argparse.Namespace, base: Settings | None = None
+) -> Settings:
     """Apply explicit CLI flags over env-loaded settings (in place)."""
     settings = base or load_settings()
     if args.src_grib_root_uri is not None:

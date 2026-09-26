@@ -73,7 +73,10 @@ def test_upload_tree_local(tmp_path):
     (src / "b.txt").write_text("b")
     (src / "a.txt").write_text("a")
     uploaded = storage.upload_tree(str(src), str(tmp_path / "dst"))
-    assert uploaded == [str(tmp_path / "dst" / "a.txt"), str(tmp_path / "dst" / "b.txt")]
+    assert uploaded == [
+        str(tmp_path / "dst" / "a.txt"),
+        str(tmp_path / "dst" / "b.txt"),
+    ]
     with pytest.raises(FileExistsError):
         storage.upload_tree(str(src), str(tmp_path / "dst"))
 
@@ -123,9 +126,7 @@ def test_auth_error_hint_signed_points_to_anon():
 def test_auth_error_hint_ignores_non_auth_errors():
     assert storage.auth_error_hint(RuntimeError("boom"), anon=True) is None
     assert storage.auth_error_hint(RuntimeError("boom"), anon=False) is None
-    assert (
-        storage.auth_error_hint(FileNotFoundError("missing"), anon=True) is None
-    )
+    assert storage.auth_error_hint(FileNotFoundError("missing"), anon=True) is None
 
 
 def test_show_file_bar_only_for_remote():

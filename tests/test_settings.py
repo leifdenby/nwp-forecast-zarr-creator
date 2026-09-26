@@ -45,7 +45,9 @@ def test_env_overrides(monkeypatch):
     monkeypatch.setenv("SRC_GRIB_ROOT_URI", "s3://bucket/prefix")
     monkeypatch.setenv("MAX_HOUR", "2")
     monkeypatch.setenv("SRC_GRIB_TEMP_PATH", "/tmp/stage")
-    monkeypatch.setenv("DST_ZARR_OUTPUT_PATH", "s3://out/{suite_name}/{dataset_id}.zarr")
+    monkeypatch.setenv(
+        "DST_ZARR_OUTPUT_PATH", "s3://out/{suite_name}/{dataset_id}.zarr"
+    )
     cfg = s.load_settings()
     assert cfg.src_grib_root_uri == "s3://bucket/prefix"
     assert cfg.max_hour == 2
@@ -112,16 +114,16 @@ def test_describe_source_auth():
     assert (
         s.describe_source_auth(False, "my-profile") == "signed (profile 'my-profile')"
     )
-    assert (
-        s.describe_source_auth(False, None) == "signed (default credential chain)"
-    )
+    assert s.describe_source_auth(False, None) == "signed (default credential chain)"
 
 
 def test_time_helpers():
     t = _utc(2025, 3, 2, 6)
     assert s.analysis_time_str(t) == "2025030206"
     assert s.refs_dir_name(t) == "2025-03-02T0600Z"
-    assert s.grib_filename(t, 4, "CONTROL__dmi", "sf") == "fc2025030206+004CONTROL__dmi_sf"
+    assert (
+        s.grib_filename(t, 4, "CONTROL__dmi", "sf") == "fc2025030206+004CONTROL__dmi_sf"
+    )
     names = s.expected_grib_filenames(t, 1, "CONTROL__dmi")
     assert len(names) == 4  # 2 hours x sf/pl
     assert names[0] == "fc2025030206+000CONTROL__dmi_sf"

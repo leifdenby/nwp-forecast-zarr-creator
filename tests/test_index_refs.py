@@ -39,7 +39,9 @@ def _touch_files(root, t, member="CONTROL__dmi", max_hour=1):
 
 
 def test_missing_files_raise(tmp_path):
-    settings = _settings(src_grib_root_uri=str(tmp_path), refs_root_path=str(tmp_path / "refs"))
+    settings = _settings(
+        src_grib_root_uri=str(tmp_path), refs_root_path=str(tmp_path / "refs")
+    )
     with pytest.raises(FileNotFoundError, match="missing"):
         index_refs.build_indexes_and_refs(_utc(2025, 3, 2, 6), settings)
 
@@ -68,16 +70,22 @@ def test_indexes_in_place_no_staging(tmp_path, monkeypatch):
     )
     calls = []
     monkeypatch.setattr(
-        index_refs, "_run_index", lambda inputs, nprocs=2: calls.append(("index", inputs))
+        index_refs,
+        "_run_index",
+        lambda inputs, nprocs=2: calls.append(("index", inputs)),
     )
     monkeypatch.setattr(
         index_refs,
         "_run_build_refs",
-        lambda indexes, refs_dir, prefix: calls.append(("build", indexes, refs_dir, prefix)),
+        lambda indexes, refs_dir, prefix: calls.append(
+            ("build", indexes, refs_dir, prefix)
+        ),
     )
     monkeypatch.setattr(index_refs, "set_local_eccodes_definitions_path", lambda: None)
     refs_dir = index_refs.build_indexes_and_refs(t, settings)
-    assert refs_dir == str(tmp_path / "refs" / "CONTROL__dmi" / "2025-03-02T0600Z.jsons")
+    assert refs_dir == str(
+        tmp_path / "refs" / "CONTROL__dmi" / "2025-03-02T0600Z.jsons"
+    )
     assert os.path.isdir(refs_dir)
     kinds = [c[0] for c in calls]
     assert kinds == ["index", "build", "index", "build"]
@@ -122,9 +130,13 @@ def test_s3_no_temp_warns_and_attempts(monkeypatch):
     from loguru import logger
 
     settings = _settings(src_grib_root_uri="s3://bucket/ml")
-    monkeypatch.setattr(index_refs.storage, "find_missing", lambda urls, profile=None, anon=False: [])
+    monkeypatch.setattr(
+        index_refs.storage, "find_missing", lambda urls, profile=None, anon=False: []
+    )
     indexed = []
-    monkeypatch.setattr(index_refs, "_run_index", lambda inputs, nprocs=2: indexed.extend(inputs))
+    monkeypatch.setattr(
+        index_refs, "_run_index", lambda inputs, nprocs=2: indexed.extend(inputs)
+    )
     monkeypatch.setattr(index_refs, "_run_build_refs", lambda *a, **k: None)
     monkeypatch.setattr(index_refs, "set_local_eccodes_definitions_path", lambda: None)
     messages = []

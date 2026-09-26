@@ -75,9 +75,7 @@ def candidate_times(
         lag = datetime.timedelta(hours=AUTO_LAG_HOURS + attempt * AUTO_LAG_STEP_HOURS)
         epoch = int((now - lag).timestamp())
         rounded = epoch // (3 * 3600) * (3 * 3600)
-        out.append(
-            datetime.datetime.fromtimestamp(rounded, tz=datetime.timezone.utc)
-        )
+        out.append(datetime.datetime.fromtimestamp(rounded, tz=datetime.timezone.utc))
     return out
 
 
@@ -93,9 +91,7 @@ def is_complete(
     """Check that all expected GRIB files exist for one analysis time."""
     urls = [
         storage.join(source_uri, name)
-        for name in expected_grib_filenames(
-            t_analysis, max_hour, member_id, file_types
-        )
+        for name in expected_grib_filenames(t_analysis, max_hour, member_id, file_types)
     ]
     return not storage.find_missing(urls, profile, anon)
 
@@ -143,14 +139,12 @@ def _sha256(path: str) -> str:
 
 def _git_sha() -> str:
     try:
-        return (
-            subprocess.run(
-                ["git", "rev-parse", "HEAD"],
-                capture_output=True,
-                text=True,
-                check=True,
-            ).stdout.strip()
-        )
+        return subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout.strip()
     except Exception:
         return "unknown"
 
@@ -288,11 +282,11 @@ def create_test_fixture(
 ) -> str:
     """Create the fixture; return the destination prefix URI (or ``dest_dir``)."""
     if suite_name not in VALID_SUITES:
-        raise ValueError(f"suite_name must be one of {VALID_SUITES}, got: {suite_name!r}")
-    if source_uri.startswith("s3://"):
-        logger.info(
-            f"S3 source auth: {describe_source_auth(src_anon, source_profile)}"
+        raise ValueError(
+            f"suite_name must be one of {VALID_SUITES}, got: {suite_name!r}"
         )
+    if source_uri.startswith("s3://"):
+        logger.info(f"S3 source auth: {describe_source_auth(src_anon, source_profile)}")
     try:
         t_analysis = resolve_analysis_time(
             t_analysis,
@@ -315,9 +309,7 @@ def create_test_fixture(
     if dest_dir is not None:
         # Stage-only mode for local development: persist files in dest_dir
         # (existing files are skipped) and upload nothing.
-        logger.info(
-            f"Staging {t_analysis.isoformat()} from {source_uri} to {dest_dir}"
-        )
+        logger.info(f"Staging {t_analysis.isoformat()} from {source_uri} to {dest_dir}")
         storage.download_to_temp(src_urls, dest_dir, source_profile, src_anon)
         logger.info(
             "Staged. Point the pipeline at it with:\n"
@@ -333,10 +325,10 @@ def create_test_fixture(
         f"from {source_uri} to {prefix}"
     )
 
-    dest_urls = (
-        [f"{dest_ml}/{name}" for name in names]
-        + [f"{prefix}/README.md", f"{prefix}/manifest.json"]
-    )
+    dest_urls = [f"{dest_ml}/{name}" for name in names] + [
+        f"{prefix}/README.md",
+        f"{prefix}/manifest.json",
+    ]
     existing = [u for u in dest_urls if storage.exists(u, dest_profile)]
     if existing and not overwrite:
         raise FileExistsError(
@@ -357,8 +349,7 @@ def create_test_fixture(
                 raise RuntimeError(hint) from exc
             raise
         staged_files = [
-            os.path.join(staged_dir, name)
-            for name in sorted(os.listdir(staged_dir))
+            os.path.join(staged_dir, name) for name in sorted(os.listdir(staged_dir))
         ]
         manifest = build_manifest(
             t_analysis=t_analysis,
@@ -440,16 +431,18 @@ def main(argv=None) -> str:
     logger.add(sys.stderr, level=args.log_level.upper())
 
     source_uri = args.source or os.environ.get("FIXTURE_SOURCE_URI", DEFAULT_SOURCE_URI)
-    fixture_bucket = (
-        args.fixture_bucket or os.environ.get("FIXTURE_BUCKET", DEFAULT_FIXTURE_BUCKET)
+    fixture_bucket = args.fixture_bucket or os.environ.get(
+        "FIXTURE_BUCKET", DEFAULT_FIXTURE_BUCKET
     )
     member_id = args.member_id or os.environ.get("MEMBER_ID", DEFAULT_MEMBER_ID)
     suite_name = args.suite_name or os.environ.get("SUITE_NAME", DEFAULT_SUITE_NAME)
     max_hour = args.max_hour
     if max_hour is None:
         max_hour = int(os.environ.get("MAX_HOUR", str(DEFAULT_MAX_HOUR)))
-    file_types = tuple(args.file_types.split()) if args.file_types else tuple(
-        os.environ.get("FILE_TYPES", " ".join(DEFAULT_FILE_TYPES)).split()
+    file_types = (
+        tuple(args.file_types.split())
+        if args.file_types
+        else tuple(os.environ.get("FILE_TYPES", " ".join(DEFAULT_FILE_TYPES)).split())
     )
     source_profile = args.source_profile or os.environ.get(
         "SRC_AWS_PROFILE", os.environ.get("AWS_PROFILE")

@@ -130,7 +130,9 @@ def describe_source_auth(anon: bool, profile: str | None) -> str:
 def require_utc(t_analysis: datetime.datetime) -> datetime.datetime:
     """Validate that an analysis time is tz-aware UTC (``Z`` suffix)."""
     if t_analysis.tzinfo is None:
-        raise ValueError(f"analysis_time must be timezone-aware (UTC), got: {t_analysis!r}")
+        raise ValueError(
+            f"analysis_time must be timezone-aware (UTC), got: {t_analysis!r}"
+        )
     return t_analysis.astimezone(datetime.timezone.utc)
 
 
@@ -173,7 +175,9 @@ def expected_grib_filenames(
 def refs_dir_for(t_analysis: datetime.datetime, settings: Settings) -> str:
     """Full refs output directory for one analysis time."""
     return os.path.join(
-        settings.refs_root_path, settings.member_id, f"{refs_dir_name(t_analysis)}.jsons"
+        settings.refs_root_path,
+        settings.member_id,
+        f"{refs_dir_name(t_analysis)}.jsons",
     )
 
 

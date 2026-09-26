@@ -20,18 +20,17 @@ import os
 import isodate
 from loguru import logger
 
+from .. import storage
 from ..grib_definitions import set_local_eccodes_definitions_path
 from ..settings import (
     FILE_TYPES,
     Settings,
     describe_source_auth,
     expected_grib_filenames,
-    load_settings,
     refs_dir_for,
     require_utc,
     source_profile,
 )
-from .. import storage
 from .cli_args import add_settings_arguments, settings_from_args
 
 
@@ -62,7 +61,9 @@ def _download_with_hint(urls, settings, profile, anon) -> str:
     """Stage files, re-raising auth failures with remediation guidance."""
     assert settings.src_grib_temp_path is not None
     try:
-        return storage.download_to_temp(urls, settings.src_grib_temp_path, profile, anon)
+        return storage.download_to_temp(
+            urls, settings.src_grib_temp_path, profile, anon
+        )
     except Exception as exc:
         hint = storage.auth_error_hint(exc, anon=anon)
         if hint is not None:
@@ -80,9 +81,7 @@ def build_indexes_and_refs(
     anon = settings.src_anon
 
     if _is_s3_uri(settings.src_grib_root_uri):
-        logger.info(
-            f"S3 source auth: {describe_source_auth(anon, profile)}"
-        )
+        logger.info(f"S3 source auth: {describe_source_auth(anon, profile)}")
 
     filenames = expected_grib_filenames(
         t_analysis, settings.max_hour, settings.member_id

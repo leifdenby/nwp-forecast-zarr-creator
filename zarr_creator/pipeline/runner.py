@@ -18,7 +18,7 @@ import isodate
 from loguru import logger
 
 from .. import storage
-from ..settings import Settings, describe_source_auth, load_settings, refs_dir_for, require_utc
+from ..settings import Settings, describe_source_auth, refs_dir_for, require_utc
 from .cli_args import add_settings_arguments, settings_from_args
 from .index_refs import build_indexes_and_refs
 
@@ -94,7 +94,9 @@ def process_one(
             continue
         break
 
-    logger.info(f"Zarr conversion successful for analysis time {t_analysis.isoformat()}")
+    logger.info(
+        f"Zarr conversion successful for analysis time {t_analysis.isoformat()}"
+    )
     if settings.src_grib_temp_path and os.path.isdir(settings.src_grib_temp_path):
         storage.cleanup_temp(settings.src_grib_temp_path)
     return "done"
@@ -146,7 +148,9 @@ def main(argv=None) -> None:
     parser.add_argument("--t-analysis", default=None)
     parser.add_argument("--watch", action="store_true")
     parser.add_argument("--poll-interval", type=float, default=DEFAULT_POLL_INTERVAL)
-    parser.add_argument("--already-done-sleep", type=float, default=DEFAULT_ALREADY_DONE_SLEEP)
+    parser.add_argument(
+        "--already-done-sleep", type=float, default=DEFAULT_ALREADY_DONE_SLEEP
+    )
     parser.add_argument("--max-retries", type=int, default=None)
     parser.add_argument("--retry-interval", type=float, default=60)
     parser.add_argument("--log-level", default="INFO")

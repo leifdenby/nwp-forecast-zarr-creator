@@ -188,7 +188,9 @@ def upload_tree(
             else:
                 dst_path = dest_path.rstrip("/") + "/" + name
                 if not overwrite and fs.exists(dst_path):
-                    raise FileExistsError(f"Destination already exists: {dest_root_uri}/{name}")
+                    raise FileExistsError(
+                        f"Destination already exists: {dest_root_uri}/{name}"
+                    )
                 if show_bar:
                     callback = _file_bar(f"↑ {name}")
                     try:

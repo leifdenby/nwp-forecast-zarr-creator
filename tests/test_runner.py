@@ -39,7 +39,9 @@ def test_compute_analysis_time_boundaries():
     # midnight wrap: 01:00 - 2h = 23:00 prev day -> 21:00
     assert runner.compute_analysis_time(_utc(2025, 3, 2, 1)) == _utc(2025, 3, 1, 21)
     # naive datetimes treated as UTC
-    assert runner.compute_analysis_time(datetime.datetime(2025, 3, 2, 5)) == _utc(2025, 3, 2, 3)
+    assert runner.compute_analysis_time(datetime.datetime(2025, 3, 2, 5)) == _utc(
+        2025, 3, 2, 3
+    )
 
 
 def test_refs_exist(tmp_path):

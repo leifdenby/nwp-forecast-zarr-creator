@@ -59,7 +59,12 @@ def test_resolve_explicit_complete():
 def test_resolve_explicit_incomplete_raises():
     with pytest.raises(FileNotFoundError, match="Incomplete"):
         cf.resolve_analysis_time(
-            _utc(2025, 3, 2, 6), "memory://cf-empty", 1, "CONTROL__dmi", ("sf", "pl"), None
+            _utc(2025, 3, 2, 6),
+            "memory://cf-empty",
+            1,
+            "CONTROL__dmi",
+            ("sf", "pl"),
+            None,
         )
 
 
@@ -84,9 +89,10 @@ def test_create_dry_run_uploads_nothing():
         dry_run=True,
     )
     assert prefix == "memory://cf-dry-dst/dini/2025-03-02T0600Z"
-    assert storage.find_missing(
-        [f"{prefix}/ml/x", f"{prefix}/README.md"]
-    ) == [f"{prefix}/ml/x", f"{prefix}/README.md"]
+    assert storage.find_missing([f"{prefix}/ml/x", f"{prefix}/README.md"]) == [
+        f"{prefix}/ml/x",
+        f"{prefix}/README.md",
+    ]
 
 
 def test_create_upload_and_verify():
@@ -97,14 +103,17 @@ def test_create_upload_and_verify():
         fixture_bucket="memory://cf-up-dst",
         max_hour=1,
     )
-    assert storage.find_missing(
-        [
-            f"{prefix}/ml/fc2025030206+000CONTROL__dmi_sf",
-            f"{prefix}/ml/fc2025030206+001CONTROL__dmi_pl",
-            f"{prefix}/README.md",
-            f"{prefix}/manifest.json",
-        ]
-    ) == []
+    assert (
+        storage.find_missing(
+            [
+                f"{prefix}/ml/fc2025030206+000CONTROL__dmi_sf",
+                f"{prefix}/ml/fc2025030206+001CONTROL__dmi_pl",
+                f"{prefix}/README.md",
+                f"{prefix}/manifest.json",
+            ]
+        )
+        == []
+    )
     # README mentions analysis time and layout
     fs, readme_path = storage.resolve_fs(f"{prefix}/README.md")
     with fs.open(readme_path) as f:
@@ -164,13 +173,11 @@ def test_dest_dir_stage_only(tmp_path):
     )
     assert out == dest
     assert sorted(os.listdir(dest)) == sorted(
-        f"fc2025030206+{h:03d}CONTROL__dmi_{t}"
-        for h in (0, 1)
-        for t in ("sf", "pl")
+        f"fc2025030206+{h:03d}CONTROL__dmi_{t}" for h in (0, 1) for t in ("sf", "pl")
     )
     # nothing uploaded
     assert storage.find_missing(
-        [f"memory://cf-local-dst/dini/2025-03-02T0600Z/ml/x"]
+        ["memory://cf-local-dst/dini/2025-03-02T0600Z/ml/x"]
     ) == ["memory://cf-local-dst/dini/2025-03-02T0600Z/ml/x"]
     # second run skips existing files without error
     cf.create_test_fixture(
