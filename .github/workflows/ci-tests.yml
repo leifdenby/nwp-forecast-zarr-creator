@@ -6,6 +6,12 @@ on:
   pull_request:
     branches: "*"
 
+env:
+  # Frozen fixture (immutable prefix) created with
+  # `python -m zarr_creator.create_test_fixture`. Analysis time, max hour and
+  # suite are read from the manifest.json next to it.
+  FIXTURE_SRC_URI: s3://uwcw-sample-grib2zarr-conversion-datasets/dini/2026-09-25T1500Z/ml
+
 jobs:
   unit:
     name: unit tests
@@ -19,13 +25,10 @@ jobs:
         run: uv run pytest -m "not integration" -q
 
   s3-e2e:
-    # Full pipeline against the frozen public fixture bucket. Analysis time,
-    # max hour, and suite are read from the fixture's manifest.json, so only
-    # the source URI is configured (as a repository variable once
-    # `create_test_fixture` has been run).
+    # Full pipeline against the frozen public fixture bucket (see
+    # FIXTURE_SRC_URI above).
     name: s3 fixture e2e
     runs-on: ubuntu-latest
-    if: vars.FIXTURE_SRC_URI != ''
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
@@ -36,7 +39,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: .grib-cache
-          key: grib-fixture-v1-${{ vars.FIXTURE_SRC_URI }}
+          key: grib-fixture-v1-${{ env.FIXTURE_SRC_URI }}
       - name: Build image
         uses: docker/build-push-action@v7
         with:
@@ -49,11 +52,12 @@ jobs:
           cache-to: type=gha,mode=max
       - name: Run e2e in container (eccodes + DMI definitions included)
         run: >
-          docker run --rm
+          docker run --rm --entrypoint uv
           -v "${{ github.workspace }}/.grib-cache:/grib-cache"
+          -v "${{ github.workspace }}/tests:/app/tests"
           -e SRC_ANON=1
           -e AWS_EC2_METADATA_DISABLED=true
           -e SRC_GRIB_TEMP_PATH=/grib-cache
-          -e FIXTURE_SRC_URI="${{ vars.FIXTURE_SRC_URI }}"
+          -e FIXTURE_SRC_URI="${{ env.FIXTURE_SRC_URI }}"
           nwp-zarr-e2e:ci
-          uv run pytest tests/test_pipeline_s3.py -q
+          run pytest tests/test_pipeline_s3.py -q
